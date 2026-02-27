@@ -1808,6 +1808,14 @@ solver_res_t ContentionPoint::get_solver_res_t(check_result z3_res) {
 
 /* *********** Generating Z3 Expressions ************ */
 
+m_val_expr_t ContentionPoint::metric_val_expr(metric_t metric, unsigned int q, unsigned int t) {
+    Metric* m = in_queues[q]->get_metric(metric);
+    if (m != nullptr)
+        return m->val(t);
+    else
+        return {net_ctx.bool_val(false), net_ctx.int_val(0)};
+}
+
 expr ContentionPoint::get_expr(Query& query) {
     expr query_expr(net_ctx.z3_ctx());
     metric_t m = query.get_metric();
@@ -2177,6 +2185,8 @@ m_val_expr_t ContentionPoint::get_expr(Indiv indiv, unsigned int t) {
         return metric->val(t);
     else
         return {net_ctx.bool_val(false), net_ctx.int_val(0)};
+
+    // return metric_val_expr(indiv.get_metric(), indiv.get_queue(), t);
 }
 
 m_val_expr_t ContentionPoint::get_expr(QSum qsum, unsigned int t) {
@@ -2191,6 +2201,17 @@ m_val_expr_t ContentionPoint::get_expr(QSum qsum, unsigned int t) {
         res = res + val_expr.second;
     }
     return m_val_expr_t(mk_and(valid), res);
+    
+    // expr res = net_ctx.int_val(0);
+    // expr_vector valid(net_ctx.z3_ctx());
+    // qset_t qset = qsum.get_qset();
+    // for (qset_t::iterator it = qset.begin(); it != qset.end(); it++) {
+    //     unsigned int q = *it;
+    //     m_val_expr_t v = metric_val_expr(qsum.get_metric(), q, t);
+    //     valid.push_back(v.first);
+    //     res = res + v.second;
+    // }
+    // return {mk_and(valid), res};
 }
 
 
