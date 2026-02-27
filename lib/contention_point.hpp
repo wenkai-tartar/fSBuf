@@ -131,7 +131,6 @@ private:
 
     void add_node_constrs();
     void add_metric_constrs();
-    void add_out_queue_constrs();
 
     void add_constr(expr const& e, char const* p);
     void add_constr_from_map(map<string, expr> constr_map);
