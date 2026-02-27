@@ -2177,41 +2177,41 @@ m_val_expr_t ContentionPoint::get_expr(Time time, unsigned int t) {
 }
 
 m_val_expr_t ContentionPoint::get_expr(Indiv indiv, unsigned int t) {
-    Queue* queue = in_queues[indiv.get_queue()];
-    Metric* metric = queue->get_metric(indiv.get_metric());
-    // TODO: This a temporary fix, after parametrizing search based on metrics we need to throw
-    // exception and stop the search if metric not exists
-    if (metric != nullptr)
-        return metric->val(t);
-    else
-        return {net_ctx.bool_val(false), net_ctx.int_val(0)};
+    // Queue* queue = in_queues[indiv.get_queue()];
+    // Metric* metric = queue->get_metric(indiv.get_metric());
+    // // TODO: This a temporary fix, after parametrizing search based on metrics we need to throw
+    // // exception and stop the search if metric not exists
+    // if (metric != nullptr)
+    //     return metric->val(t);
+    // else
+    //     return {net_ctx.bool_val(false), net_ctx.int_val(0)};
 
-    // return metric_val_expr(indiv.get_metric(), indiv.get_queue(), t);
+    return metric_val_expr(indiv.get_metric(), indiv.get_queue(), t);
 }
 
 m_val_expr_t ContentionPoint::get_expr(QSum qsum, unsigned int t) {
-    expr res = net_ctx.int_val(0);
-    expr_vector valid(net_ctx.z3_ctx());
-
-    qset_t qset = qsum.get_qset();
-    for (qset_t::iterator it = qset.begin(); it != qset.end(); it++) {
-        unsigned int q = *it;
-        m_val_expr_t val_expr = in_queues[q]->get_metric(qsum.get_metric())->val(t);
-        valid.push_back(val_expr.first);
-        res = res + val_expr.second;
-    }
-    return m_val_expr_t(mk_and(valid), res);
-    
     // expr res = net_ctx.int_val(0);
     // expr_vector valid(net_ctx.z3_ctx());
+
     // qset_t qset = qsum.get_qset();
     // for (qset_t::iterator it = qset.begin(); it != qset.end(); it++) {
     //     unsigned int q = *it;
-    //     m_val_expr_t v = metric_val_expr(qsum.get_metric(), q, t);
-    //     valid.push_back(v.first);
-    //     res = res + v.second;
+    //     m_val_expr_t val_expr = in_queues[q]->get_metric(qsum.get_metric())->val(t);
+    //     valid.push_back(val_expr.first);
+    //     res = res + val_expr.second;
     // }
-    // return {mk_and(valid), res};
+    // return m_val_expr_t(mk_and(valid), res);
+    
+    expr res = net_ctx.int_val(0);
+    expr_vector valid(net_ctx.z3_ctx());
+    qset_t qset = qsum.get_qset();
+    for (qset_t::iterator it = qset.begin(); it != qset.end(); it++) {
+        unsigned int q = *it;
+        m_val_expr_t v = metric_val_expr(qsum.get_metric(), q, t);
+        valid.push_back(v.first);
+        res = res + v.second;
+    }
+    return {mk_and(valid), res};
 }
 
 
