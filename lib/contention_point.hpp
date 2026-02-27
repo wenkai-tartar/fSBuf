@@ -101,6 +101,8 @@ protected:
 
     void init();
 
+    virtual void add_in_queue_constrs();
+
 private:
     Workload base_wl;
     expr base_wl_expr;
@@ -126,7 +128,6 @@ private:
 
     void add_node_constrs();
     void add_metric_constrs();
-    void add_in_queue_constrs();
     void add_out_queue_constrs();
 
     void add_constr(expr const& e, char const* p);
