@@ -102,6 +102,7 @@ protected:
     void init();
 
     virtual void add_in_queue_constrs();
+    virtual void add_out_queue_constrs();
     
     virtual m_val_expr_t metric_val_expr(metric_t metric, unsigned int q, unsigned int t);
 
