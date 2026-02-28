@@ -12,6 +12,14 @@ Metric(metric_t::DEMAND, queue, total_time, net_ctx) {
     init(net_ctx);
 }
 
+expr& Demand::demand_cnt(unsigned int t) {
+    return demand_cnt_[t];
+}
+
+const expr& Demand::demand_cnt(unsigned int t) const {
+    return demand_cnt_[t];
+}
+
 void Demand::eval(const IndexedExample* eg, unsigned int time, unsigned int qind, metric_val& res) {
     res.valid = true;
     res.value = 0;

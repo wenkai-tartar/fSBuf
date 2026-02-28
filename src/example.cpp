@@ -34,6 +34,17 @@ ostream& operator<<(ostream& os, const Example& eg) {
         os << endl;
     }
 
+    os << "demands:" << endl;
+    for (map<cid_t, vector<unsigned int>>::const_iterator it = eg.demands.begin();
+         it != eg.demands.end();
+         it++) {
+        os << it->first << " ";
+        for (unsigned int t = 0; t < it->second.size(); t++) {
+            os << it->second[t] << " ";
+        }
+        os << endl;
+    }
+
     os << "pkts metadata: " << endl;
     for (map<cid_t, vector<vector<int>>>::const_iterator it = eg.enqs_meta1.begin();
          it != eg.enqs_meta1.end();
@@ -110,6 +121,25 @@ void write_examples_to_file(deque<Example*>& examples, string fname) {
             }
             out << endl;
         }
+
+        for (map<cid_t, vector<unsigned int>>::iterator it = eg->enqs.begin(); it != eg->enqs.end();
+             it++) {
+            cid_t qid = it->first;
+            out << qid << " ";
+            if (eg->demands.find(qid) != eg->demands.end()) {
+                vector<unsigned int>& ds = eg->demands[qid];
+                for (unsigned int t = 0; t < ds.size(); t++) {
+                    out << ds[t] << " ";
+                }
+            } else {
+                // Backward-compatible default: if demands is absent, use enqs.
+                vector<unsigned int>& enqs = eg->enqs[qid];
+                for (unsigned int t = 0; t < enqs.size(); t++) {
+                    out << enqs[t] << " ";
+                }
+            }
+            out << endl;
+        }
     }
     out.close();
 }
@@ -153,6 +183,8 @@ vector<int> s_split_line(string line) {
  num_queue lines in the format above for enqs_meta2
  num_queue lines for deqs:
  qid deq1 deq2 ...
+ num_queue lines for demands (optional in old files):
+ qid demand1 demand2 ...
  */
 void read_examples_from_file(deque<Example*>& examples, string fname) {
     ifstream in;
@@ -163,7 +195,17 @@ void read_examples_from_file(deque<Example*>& examples, string fname) {
         return;
     }
     string line;
-    while (getline(in, line)) {
+    bool has_pending_line = false;
+    string pending_line;
+    while (true) {
+        if (has_pending_line) {
+            line = pending_line;
+            has_pending_line = false;
+        } else {
+            if (!getline(in, line)) break;
+        }
+        if (line.size() == 0) continue;
+
         Example* eg = new Example();
 
         size_t next_part = line.find(" ", 0);
@@ -268,6 +310,64 @@ void read_examples_from_file(deque<Example*>& examples, string fname) {
             eg->deqs[qid] = u_parts;
         }
 
+        // Read optional demands section.
+        // New format has num_queues demand lines.
+        // Old format has no demand lines; in that case fallback to enqs.
+        bool parsed_demands = false;
+        if (getline(in, line)) {
+            if (line.size() > 0) {
+                size_t next_part = line.find(" ", 0);
+                if (next_part != string::npos) {
+                    cid_t first_qid = line.substr(0, next_part);
+                    string first_tail = line.substr(next_part + 1);
+                    vector<unsigned int> first_parts = u_split_line(first_tail);
+
+                    if (first_parts.size() == eg->total_time) {
+                        // This is a demand line in the new format.
+                        eg->demands[first_qid] = first_parts;
+                        for (unsigned int i = 1; i < num_queues; i++) {
+                            if (!getline(in, line)) {
+                                cout << "Bad input file format" << endl;
+                                in.close();
+                                return;
+                            }
+                            next_part = line.find(" ", 0);
+                            if (next_part == string::npos) {
+                                cout << "Bad input file format" << endl;
+                                in.close();
+                                return;
+                            }
+                            cid_t qid = line.substr(0, next_part);
+                            string tail = line.substr(next_part + 1);
+                            vector<unsigned int> demand_parts = u_split_line(tail);
+                            if (demand_parts.size() != eg->total_time) {
+                                cout << "Bad input file format" << endl;
+                                in.close();
+                                return;
+                            }
+                            eg->demands[qid] = demand_parts;
+                        }
+                        parsed_demands = true;
+                    } else {
+                        // This line belongs to the next example in old-format files.
+                        has_pending_line = true;
+                        pending_line = line;
+                    }
+                } else {
+                    has_pending_line = true;
+                    pending_line = line;
+                }
+            }
+        }
+
+        if (!parsed_demands) {
+            for (map<cid_t, vector<unsigned int>>::const_iterator it = eg->enqs.begin();
+                 it != eg->enqs.end();
+                 it++) {
+                eg->demands[it->first] = it->second;
+            }
+        }
+
         examples.push_back(eg);
     }
 }
@@ -290,6 +390,15 @@ ostream& operator<<(ostream& os, const IndexedExample& eg) {
         os << i << " ";
         for (unsigned int t = 0; t < eg.deqs[i].size(); t++) {
             os << eg.deqs[i][t] << " ";
+        }
+        os << endl;
+    }
+
+    os << "demands:" << endl;
+    for (unsigned int i = 0; i < eg.demands.size(); i++) {
+        os << i << " ";
+        for (unsigned int t = 0; t < eg.demands[i].size(); t++) {
+            os << eg.demands[i][t] << " ";
         }
         os << endl;
     }

@@ -1579,7 +1579,7 @@ Example* ContentionPoint::unindex_example(IndexedExample* ieg) {
         eg->enqs_meta2[qid] = ieg->enqs_meta2[i];
         eg->deqs[qid] = ieg->deqs[i];
 
-        if (i < eg->demands.size()) {
+        if (i < ieg->demands.size()) {
             eg->demands[qid] = ieg->demands[i];
         } else {
             eg->demands[qid] = ieg->enqs[i];
