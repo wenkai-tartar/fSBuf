@@ -1546,6 +1546,24 @@ IndexedExample* ContentionPoint::index_example(Example* eg) {
         ieg->deqs.push_back(eg->deqs[qid]);
     }
 
+    for (unsigned int i = 0; i < in_queues.size(); i++) {
+        cid_t qid = in_queues[i]->get_id();
+
+        if (eg->demands.find(qid) != eg->demands.end()) {
+            ieg->demands.push_back(eg->demands[qid]);
+            continue;
+        }
+
+        // Compatible with fperf
+        if (eg->enqs.find(qid) == eg->enqs.end()) {
+            cout << "ContentionPoint::workload_satisifes_example: Example does not include "
+                    "all queues."
+                 << endl;
+            
+        }
+        ieg->demands.push_back(eg->enqs[qid]); 
+    }
+
     return ieg;
 }
 
@@ -1560,6 +1578,12 @@ Example* ContentionPoint::unindex_example(IndexedExample* ieg) {
         eg->enqs_meta1[qid] = ieg->enqs_meta1[i];
         eg->enqs_meta2[qid] = ieg->enqs_meta2[i];
         eg->deqs[qid] = ieg->deqs[i];
+
+        if (i < eg->demands.size()) {
+            eg->demands[qid] = ieg->demands[i];
+        } else {
+            eg->demands[qid] = ieg->enqs[i];
+        }
     }
 
     return eg;

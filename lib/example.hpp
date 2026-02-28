@@ -23,6 +23,7 @@ struct Example {
     cid_t query_qid;
     map<cid_t, vector<unsigned int>> enqs;
     map<cid_t, vector<unsigned int>> deqs;
+    map<cid_t, vector<unsigned int>> demands;
 
     map<cid_t, vector<vector<int>>> enqs_meta1;
     map<cid_t, vector<vector<int>>> enqs_meta2;
@@ -35,6 +36,8 @@ struct IndexedExample {
     cid_t query_qid;
     vector<vector<unsigned int>> enqs;
     vector<vector<unsigned int>> deqs;
+    vector<vector<unsigned int>> demands;
+
     vector<vector<vector<int>>> enqs_meta1;
     vector<vector<vector<int>>> enqs_meta2;
 
