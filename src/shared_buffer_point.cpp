@@ -27,13 +27,16 @@ void SharedBufferPoint::add_in_queue_constrs() {
         admit_in_.clear();
         admit_e_.clear();
         admit_.clear();
+        write_slot_.clear();
+        read_slot_.clear();
 
         admit_in_.resize(in_cnt);
         admit_e_.resize(eg_cnt);
         admit_.resize(in_cnt);
-        write_slot_.clear();
         write_slot_.resize(in_cnt);
+        read_slot_.resize(eg_cnt);
 
+        // Ingress queue vars
         char vname[100];
         for (unsigned int q = 0; q < in_cnt; q++) {
             write_slot_[q].resize(slot_cnt);
@@ -52,10 +55,18 @@ void SharedBufferPoint::add_in_queue_constrs() {
             }
         }
 
+        // Egress queue vars
         for (unsigned int e = 0; e < eg_cnt; e++) {
+            read_slot_[e].resize(slot_cnt);
             for (unsigned int t = 0; t < total_time; t++) {
                 snprintf(vname, sizeof(vname), "sb_admit_e[%u][%u]", e, t);
                 admit_e_[e].push_back(net_ctx.bool_const(vname));
+            }
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                for (unsigned int t = 0; t < total_time; t++) {
+                    snprintf(vname, sizeof(vname), "sb_read_slot[%u][%u][%u]", e, b, t);
+                    read_slot_[e][b].push_back(net_ctx.bool_const(vname));
+                }
             }
         }
 
@@ -134,6 +145,45 @@ void SharedBufferPoint::add_in_queue_constrs() {
 
 void SharedBufferPoint::add_out_queue_constrs() {
     ContentionPoint::add_out_queue_constrs();
+
+    const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
+    if (eg_cnt == 0 || slot_cnt == 0) return;
+
+    char constr_name[100];
+    map<string, expr> new_constr_map;
+
+    // For strict egress service, each egress reads exactly deq_cnt(e,t) slots at time t.
+    // With current queue config (max_deq=1), this enforces a 0/1 read action per egress per slot.
+    for (unsigned int e = 0; e < eg_cnt; e++) {
+        Queue* outq = out_queues[e];
+        for (unsigned int t = 0; t < total_time; t++) {
+            expr reads_this_e_t_sum = net_ctx.int_val(0);
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                reads_this_e_t_sum = reads_this_e_t_sum + ite(read_slot_[e][b][t],
+                                                              net_ctx.int_val(1),
+                                                              net_ctx.int_val(0));
+            }
+            snprintf(constr_name, sizeof(constr_name), "sb_read_deq_eq_e%u_t%u", e, t);
+            new_constr_map.insert(named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
+        }
+    }
+
+    // A physical slot can be consumed by at most one egress in the same time step.
+    for (unsigned int b = 0; b < slot_cnt; b++) {
+        for (unsigned int t = 0; t < total_time; t++) {
+            expr slot_readers_sum = net_ctx.int_val(0);
+            for (unsigned int e = 0; e < eg_cnt; e++) {
+                slot_readers_sum = slot_readers_sum + ite(read_slot_[e][b][t],
+                                                          net_ctx.int_val(1),
+                                                          net_ctx.int_val(0));
+            }
+            snprintf(constr_name, sizeof(constr_name), "sb_slot_single_reader_b%u_t%u", b, t);
+            new_constr_map.insert(named_constr(constr_name, slot_readers_sum <= 1));
+        }
+    }
+
+    add_constr_from_map(new_constr_map);
 }
 
 m_val_expr_t SharedBufferPoint::metric_val_expr(metric_t metric, unsigned int q, unsigned t) {

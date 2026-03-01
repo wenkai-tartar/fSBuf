@@ -51,6 +51,7 @@ protected:
     vector<vector<expr>> alloc_eg_lossless_; // [q][t]
     vector<vector<expr>> release_eg_lossless_;
     vector<vector<vector<expr>>> write_slot_; // [q][b][t] bool
+    vector<vector<vector<expr>>> read_slot_; // [e][b][t] bool
 };
 
 #endif /* shared_buffer_point_hpp */
