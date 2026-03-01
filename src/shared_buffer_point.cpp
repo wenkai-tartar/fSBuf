@@ -8,7 +8,7 @@
 #include "shared_buffer_point.hpp"
 
 SharedBufferPoint::SharedBufferPoint(unsigned int total_time, SharedBufferPointInfo info):
-ContentionPoint(total_time), _sb_info(info) {
+ContentionPoint(total_time), sb_info(info) {
 }
 
 void SharedBufferPoint::add_in_queue_constrs() {

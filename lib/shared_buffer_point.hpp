@@ -25,8 +25,28 @@ protected:
     void add_out_queue_constrs() override;
     m_val_expr_t metric_val_expr(metric_t metric, unsigned int q, unsigned t) override;
 
-    SharedBufferPointInfo _sb_info;
-    bool _shared_vars_initialized = false;
+    SharedBufferPointInfo sb_info;
+    bool shared_vars_initialized_ = false;
+
+    vector<vector<expr>> buf_pkt_;
+    vector<vector<expr>> buf_ing_;
+    vector<vector<expr>> buf_eg_;
+    vector<expr> buf_used_;
+    vector<vector<expr>> ingress_pool_pos_;
+    vector<expr> ingress_pool_used_;
+    vector<vector<expr>> headroom_pool_pos_;
+    vector<expr> headroom_pool_used_;
+    vector<vector<expr>> egress_lossless_pool_pos_;
+    vector<expr> egress_lossless_pool_used_;
+
+    vector<vector<expr>> admit_; // [q][t]
+    vector<vector<expr>> drop_or_block_; // [q][t]
+    vector<vector<expr>> alloc_ing_; // [q][t]
+    vector<vector<expr>> release_ing_;
+    vector<vector<expr>> alloc_hdr_; // [q][t]
+    vector<vector<expr>> release_hdr_;
+    vector<vector<expr>> alloc_eg_lossless_; // [q][t]
+    vector<vector<expr>> release_eg_lossless_;
 };
 
 #endif /* shared_buffer_point_hpp */
