@@ -105,6 +105,9 @@ protected:
     virtual void add_out_queue_constrs();
     
     virtual m_val_expr_t metric_val_expr(metric_t metric, unsigned int q, unsigned int t);
+    
+    void add_constr(expr const& e, char const* p);
+    void add_constr_from_map(map<string, expr> constr_map);
 
 private:
     Workload base_wl;
@@ -131,9 +134,6 @@ private:
 
     void add_node_constrs();
     void add_metric_constrs();
-
-    void add_constr(expr const& e, char const* p);
-    void add_constr_from_map(map<string, expr> constr_map);
 
     string get_model_str(model& m);
     virtual string cp_model_str(model& m, NetContext& net_ctx, unsigned int t) = 0;

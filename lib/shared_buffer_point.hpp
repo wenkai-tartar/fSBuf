@@ -39,6 +39,8 @@ protected:
     vector<vector<expr>> egress_lossless_pool_pos_;
     vector<expr> egress_lossless_pool_used_;
 
+    vector<vector<expr>> admit_in_; // [q][t] bool
+    vector<vector<expr>> admit_e_; // [e][t] bool
     vector<vector<expr>> admit_; // [q][t]
     vector<vector<expr>> drop_or_block_; // [q][t]
     vector<vector<expr>> alloc_ing_; // [q][t]
