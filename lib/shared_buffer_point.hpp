@@ -14,6 +14,7 @@ using namespace std;
 
 struct SharedBufferPointInfo {
     unsigned int max_demand_per_t = 1;
+    unsigned int buffer_slot_cnt = MAX_QUEUE_SIZE;
 };
 
 class SharedBufferPoint : public ContentionPoint {
@@ -49,6 +50,7 @@ protected:
     vector<vector<expr>> release_hdr_;
     vector<vector<expr>> alloc_eg_lossless_; // [q][t]
     vector<vector<expr>> release_eg_lossless_;
+    vector<vector<vector<expr>>> write_slot_; // [q][b][t] bool
 };
 
 #endif /* shared_buffer_point_hpp */

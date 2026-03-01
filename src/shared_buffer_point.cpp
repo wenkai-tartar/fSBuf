@@ -18,6 +18,7 @@ void SharedBufferPoint::add_in_queue_constrs() {
 
     const unsigned int in_cnt = (unsigned int) in_queues.size();
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
 
     if (in_cnt == 0 || eg_cnt == 0) return;
 
@@ -30,14 +31,24 @@ void SharedBufferPoint::add_in_queue_constrs() {
         admit_in_.resize(in_cnt);
         admit_e_.resize(eg_cnt);
         admit_.resize(in_cnt);
+        write_slot_.clear();
+        write_slot_.resize(in_cnt);
 
         char vname[100];
         for (unsigned int q = 0; q < in_cnt; q++) {
+            write_slot_[q].resize(slot_cnt);
             for (unsigned int t = 0; t < total_time; t++) {
                 snprintf(vname, sizeof(vname), "sb_admit_in[%u][%u]", q, t);
                 admit_in_[q].push_back(net_ctx.bool_const(vname));
                 snprintf(vname, sizeof(vname), "sb_admit[%u][%u]", q, t);
                 admit_[q].push_back(net_ctx.bool_const(vname));
+            }
+
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                for (unsigned int t = 0; t < total_time; t++) {
+                    snprintf(vname, sizeof(vname), "sb_write_slot[%u][%u][%u]", q, b, t);
+                    write_slot_[q][b].push_back(net_ctx.bool_const(vname));
+                }
             }
         }
 
@@ -61,6 +72,8 @@ void SharedBufferPoint::add_in_queue_constrs() {
             expr egress_cnt = net_ctx.int_val((int) eg_cnt);
             expr dst_eg = dst % egress_cnt;
 
+            // Admission is route-aware: for the egress selected by dst_eg, admit is true
+            // iff both ingress-side and egress-side admission gates are true.
             expr_vector route_cases(net_ctx.z3_ctx());
             for (unsigned int e = 0; e < eg_cnt; e++) {
                 expr route_to_e = dst_eg == net_ctx.int_val((int) e);
@@ -70,6 +83,49 @@ void SharedBufferPoint::add_in_queue_constrs() {
 
             snprintf(constr_name, sizeof(constr_name), "sb_admit_def_q%u_t%u", q, t);
             new_constr_map.insert(named_constr(constr_name, mk_and(route_cases)));
+
+            if (slot_cnt > 0) {
+                // Per (q,t): admitted traffic writes exactly one slot; non-admitted traffic writes none.
+                // Also enforce write_slot -> admit to prevent writes without admission.
+                expr writes_this_q_t_sum = net_ctx.int_val(0);
+                for (unsigned int b = 0; b < slot_cnt; b++) {
+                    writes_this_q_t_sum =
+                        writes_this_q_t_sum + ite(write_slot_[q][b][t],
+                                                  net_ctx.int_val(1),
+                                                  net_ctx.int_val(0));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_write_implies_admit_q%u_b%u_t%u",
+                             q,
+                             b,
+                             t);
+                    new_constr_map.insert(
+                        named_constr(constr_name, implies(write_slot_[q][b][t], admit_[q][t])));
+                }
+
+                snprintf(constr_name, sizeof(constr_name), "sb_admit_write_eq_q%u_t%u", q, t);
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    writes_this_q_t_sum ==
+                        ite(admit_[q][t], net_ctx.int_val(1), net_ctx.int_val(0))));
+            }
+        }
+    }
+
+    if (slot_cnt > 0) {
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            for (unsigned int t = 0; t < total_time; t++) {
+                // Per (b,t): at most one ingress queue can write to the same physical slot.
+                expr slot_writers_sum = net_ctx.int_val(0);
+                for (unsigned int q = 0; q < in_cnt; q++) {
+                    slot_writers_sum = slot_writers_sum + ite(write_slot_[q][b][t],
+                                                              net_ctx.int_val(1),
+                                                              net_ctx.int_val(0));
+                }
+                snprintf(constr_name, sizeof(constr_name), "sb_slot_single_writer_b%u_t%u", b, t);
+                new_constr_map.insert(named_constr(constr_name, slot_writers_sum <= 1));
+            }
         }
     }
 
