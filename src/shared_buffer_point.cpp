@@ -27,17 +27,27 @@ void SharedBufferPoint::add_in_queue_constrs() {
         admit_in_.clear();
         admit_e_.clear();
         admit_.clear();
+        buf_used_.clear();
         write_slot_.clear();
         read_slot_.clear();
 
         admit_in_.resize(in_cnt);
         admit_e_.resize(eg_cnt);
         admit_.resize(in_cnt);
+        buf_used_.resize(slot_cnt);
         write_slot_.resize(in_cnt);
         read_slot_.resize(eg_cnt);
 
-        // Ingress queue vars
         char vname[100];
+        // Shared-buffer slot occupancy vars
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            for (unsigned int t = 0; t < total_time; t++) {
+                snprintf(vname, sizeof(vname), "sb_buf_used[%u][%u]", b, t);
+                buf_used_[b].push_back(net_ctx.bool_const(vname));
+            }
+        }
+
+        // Ingress queue vars
         for (unsigned int q = 0; q < in_cnt; q++) {
             write_slot_[q].resize(slot_cnt);
             for (unsigned int t = 0; t < total_time; t++) {
@@ -113,6 +123,17 @@ void SharedBufferPoint::add_in_queue_constrs() {
                              t);
                     new_constr_map.insert(
                         named_constr(constr_name, implies(write_slot_[q][b][t], admit_[q][t])));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_write_requires_empty_q%u_b%u_t%u",
+                             q,
+                             b,
+                             t);
+                    // TODO(shared-buffer): once buf_pkt_ init/transition constraints are implemented,
+                    // switch this guard to !net_ctx.pkt2val(buf_pkt_[b][t]).
+                    new_constr_map.insert(
+                        named_constr(constr_name, implies(write_slot_[q][b][t], !buf_used_[b][t])));
                 }
 
                 snprintf(constr_name, sizeof(constr_name), "sb_admit_write_eq_q%u_t%u", q, t);
@@ -160,6 +181,17 @@ void SharedBufferPoint::add_out_queue_constrs() {
         for (unsigned int t = 0; t < total_time; t++) {
             expr reads_this_e_t_sum = net_ctx.int_val(0);
             for (unsigned int b = 0; b < slot_cnt; b++) {
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "sb_read_requires_nonempty_e%u_b%u_t%u",
+                         e,
+                         b,
+                         t);
+                // TODO(shared-buffer): once buf_pkt_ init/transition constraints are implemented,
+                // switch this guard to net_ctx.pkt2val(buf_pkt_[b][t]).
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(read_slot_[e][b][t], buf_used_[b][t])));
+
                 reads_this_e_t_sum = reads_this_e_t_sum + ite(read_slot_[e][b][t],
                                                               net_ctx.int_val(1),
                                                               net_ctx.int_val(0));

@@ -29,10 +29,12 @@ protected:
     SharedBufferPointInfo sb_info;
     bool shared_vars_initialized_ = false;
 
+    // TODO(shared-buffer): model per-slot packet state across time (init + transition),
+    // then replace buf_used_ guards with pkt2val(buf_pkt_[b][t]).
     vector<vector<expr>> buf_pkt_;
     vector<vector<expr>> buf_ing_;
     vector<vector<expr>> buf_eg_;
-    vector<expr> buf_used_;
+    vector<vector<expr>> buf_used_; // [b][t] bool
     vector<vector<expr>> ingress_pool_pos_;
     vector<expr> ingress_pool_used_;
     vector<vector<expr>> headroom_pool_pos_;
