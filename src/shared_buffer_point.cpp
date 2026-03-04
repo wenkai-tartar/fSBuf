@@ -895,6 +895,18 @@ void SharedBufferPoint::add_out_queue_constrs() {
                     named_constr(constr_name,
                                  implies(read_slot_[e][b][t][deq_k],
                                          net_ctx.pkt2val(buf_pkt_[b][t][deq_k]))));
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "sb_read_requires_match_egress_e%u_b%u_t%u_k%u",
+                         e,
+                         b,
+                         t,
+                         deq_k);
+                // A read action by egress e can only target a slot owned by egress e.
+                new_constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(read_slot_[e][b][t][deq_k],
+                                         buf_e_[b][t][deq_k] == (int) e)));
                 reads_this_e_t_sum = reads_this_e_t_sum + b2i(read_slot_[e][b][t][deq_k]);
             }
 
