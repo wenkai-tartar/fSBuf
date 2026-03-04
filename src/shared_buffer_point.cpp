@@ -447,7 +447,10 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 }
 
                 expr writes_sum = int0;
+                expr any_empty = bool0;
                 for (unsigned int b = 0; b < slot_cnt; b++) {
+                    expr slot_empty = !net_ctx.pkt2val(buf_pkt_[b][t][k]);
+                    any_empty = any_empty || slot_empty;
                     writes_sum = writes_sum + b2i(write_slot_[q][b][t][k]);
 
                     snprintf(constr_name,
@@ -471,8 +474,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     // Writes can only target currently empty slots.
                     new_constr_map.insert(
                         named_constr(constr_name,
-                                     implies(write_slot_[q][b][t][k],
-                                             !net_ctx.pkt2val(buf_pkt_[b][t][k]))));
+                                     implies(write_slot_[q][b][t][k], slot_empty)));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -492,6 +494,10 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 new_constr_map.insert(named_constr(
                     constr_name,
                     writes_sum == ite(admit_[q][t][k], int1, int0)));
+                snprintf(constr_name, sizeof(constr_name), "sb_admit_requires_empty_q%u_t%u_k%u", q, t, k);
+                // Admission is only possible when at least one shared-buffer slot is currently empty.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(admit_[q][t][k], any_empty)));
             }
 
             for (unsigned int b = 0; b < slot_cnt; b++) {
