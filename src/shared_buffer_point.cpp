@@ -60,11 +60,11 @@ void SharedBufferPoint::init_shared_vars() {
     admit_.clear();
     // drop_or_block_.clear();
     alloc_ing_.clear();
-    release_ing_.clear();
+    release_in_.clear();
     alloc_hdr_.clear();
     release_hdr_.clear();
     alloc_eg_lossless_.clear();
-    release_eg_lossless_.clear();
+    release_e_.clear();
 
     buf_pkt_.clear();
     buf_in_.clear();
@@ -84,11 +84,11 @@ void SharedBufferPoint::init_shared_vars() {
     admit_.resize(in_cnt);
     // drop_or_block_.resize(in_cnt);
     alloc_ing_.resize(in_cnt);
-    release_ing_.resize(in_cnt);
+    release_in_.resize(in_cnt);
     alloc_hdr_.resize(in_cnt);
     release_hdr_.resize(in_cnt);
     alloc_eg_lossless_.resize(eg_cnt);
-    release_eg_lossless_.resize(eg_cnt);
+    release_e_.resize(eg_cnt);
 
     buf_pkt_.resize(slot_cnt);
     buf_in_.resize(slot_cnt);
@@ -127,7 +127,7 @@ void SharedBufferPoint::init_shared_vars() {
         admit_[q].resize(total_time);
         // drop_or_block_[q].resize(total_time);
         alloc_ing_[q].resize(total_time);
-        release_ing_[q].resize(total_time);
+        release_in_[q].resize(total_time);
         alloc_hdr_[q].resize(total_time);
         release_hdr_[q].resize(total_time);
         ingress_pool_occ_[q].resize(total_time);
@@ -143,8 +143,8 @@ void SharedBufferPoint::init_shared_vars() {
                 // drop_or_block_[q][t].push_back(net_ctx.bool_const(vname));
                 snprintf(vname, sizeof(vname), "sb_alloc_ing[%u][%u][%u]", q, t, k);
                 alloc_ing_[q][t].push_back(net_ctx.bool_const(vname));
-                snprintf(vname, sizeof(vname), "sb_release_ing[%u][%u][%u]", q, t, k);
-                release_ing_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_release_in[%u][%u][%u]", q, t, k);
+                release_in_[q][t].push_back(net_ctx.bool_const(vname));
                 snprintf(vname, sizeof(vname), "sb_alloc_hdr[%u][%u][%u]", q, t, k);
                 alloc_hdr_[q][t].push_back(net_ctx.bool_const(vname));
                 snprintf(vname, sizeof(vname), "sb_release_hdr[%u][%u][%u]", q, t, k);
@@ -185,7 +185,7 @@ void SharedBufferPoint::init_shared_vars() {
         read_slot_[e].resize(slot_cnt);
         admit_e_[e].resize(total_time);
         alloc_eg_lossless_[e].resize(total_time);
-        release_eg_lossless_[e].resize(total_time);
+        release_e_[e].resize(total_time);
         egress_lossless_pool_occ_[e].resize(total_time);
 
         for (unsigned int t = 0; t < total_time; t++) {
@@ -194,8 +194,8 @@ void SharedBufferPoint::init_shared_vars() {
                 admit_e_[e][t].push_back(net_ctx.bool_const(vname));
                 snprintf(vname, sizeof(vname), "sb_alloc_eg_lossless[%u][%u][%u]", e, t, k);
                 alloc_eg_lossless_[e][t].push_back(net_ctx.bool_const(vname));
-                snprintf(vname, sizeof(vname), "sb_release_eg_lossless[%u][%u][%u]", e, t, k);
-                release_eg_lossless_[e][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_release_e[%u][%u][%u]", e, t, k);
+                release_e_[e][t].push_back(net_ctx.bool_const(vname));
             }
 
             for (unsigned int k = 0; k < k_states; k++) {
@@ -260,9 +260,9 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 }
 
                 if (!is_deq_step) {
-                    snprintf(constr_name, sizeof(constr_name), "sb_release_ing_non_deq_q%u_t%u_k%u", q, t, k);
+                    snprintf(constr_name, sizeof(constr_name), "sb_release_in_non_deq_q%u_t%u_k%u", q, t, k);
                     // Ingress-pool release is only allowed at the dedicated deq micro-step.
-                    new_constr_map.insert(named_constr(constr_name, !release_ing_[q][t][k]));
+                    new_constr_map.insert(named_constr(constr_name, !release_in_[q][t][k]));
                 }
 
                 snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_disabled_q%u_t%u_k%u", q, t, k);
@@ -300,12 +300,12 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 } else {
                     snprintf(constr_name,
                              sizeof(constr_name),
-                             "sb_release_eg_non_deq_e%u_t%u_k%u",
+                             "sb_release_e_non_deq_e%u_t%u_k%u",
                              e,
                              t,
                              k);
                     // Egress release is only allowed at the dedicated deq micro-step.
-                    new_constr_map.insert(named_constr(constr_name, !release_eg_lossless_[e][t][k]));
+                    new_constr_map.insert(named_constr(constr_name, !release_e_[e][t][k]));
 
                     for (unsigned int b = 0; b < slot_cnt; b++) {
                         snprintf(constr_name,
@@ -534,14 +534,14 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 if (k < micro_steps) {
                     snprintf(constr_name,
                              sizeof(constr_name),
-                             "sb_release_ing_requires_credit_q%u_t%u_k%u",
+                             "sb_release_in_requires_credit_q%u_t%u_k%u",
                              q,
                              t,
                              k);
                     // Ingress release requires available ingress-pool credit.
                     new_constr_map.insert(named_constr(
                         constr_name,
-                        implies(release_ing_[q][t][k], ingress_pool_occ_[q][t][k] > 0)));
+                        implies(release_in_[q][t][k], ingress_pool_occ_[q][t][k] > 0)));
                 }
             }
 
@@ -561,14 +561,14 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 if (k < micro_steps) {
                     snprintf(constr_name,
                              sizeof(constr_name),
-                             "sb_release_eg_requires_credit_e%u_t%u_k%u",
+                             "sb_release_e_requires_credit_e%u_t%u_k%u",
                              e,
                              t,
                              k);
                     // Egress release requires available egress-lossless credit.
                     new_constr_map.insert(named_constr(
                         constr_name,
-                        implies(release_eg_lossless_[e][t][k], egress_lossless_pool_occ_[e][t][k] > 0)));
+                        implies(release_e_[e][t][k], egress_lossless_pool_occ_[e][t][k] > 0)));
                 }
             }
 
@@ -618,7 +618,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     constr_name,
                     ingress_pool_occ_[q][t][k + 1] ==
                         ingress_pool_occ_[q][t][k] + b2i(alloc_ing_[q][t][k]) -
-                            b2i(release_ing_[q][t][k])));
+                            b2i(release_in_[q][t][k])));
 
                 snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_step_q%u_t%u_k%u", q, t, k);
                 // Headroom ledger transition applies alloc/release delta across one micro-step.
@@ -636,7 +636,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     constr_name,
                     egress_lossless_pool_occ_[e][t][k + 1] ==
                         egress_lossless_pool_occ_[e][t][k] + b2i(alloc_eg_lossless_[e][t][k]) -
-                            b2i(release_eg_lossless_[e][t][k])));
+                            b2i(release_e_[e][t][k])));
             }
 
             for (unsigned int b = 0; b < slot_cnt; b++) {
@@ -730,21 +730,35 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
             }
         }
 
-        expr release_ing_sum = int0;
+        expr release_in_sum = int0;
         expr release_hdr_sum = int0;
         expr release_eg_sum = int0;
         for (unsigned int q = 0; q < in_cnt; q++) {
-            release_ing_sum = release_ing_sum + b2i(release_ing_[q][t][deq_k]);
+            expr reads_from_q_sum = int0;
+            for (unsigned int e = 0; e < eg_cnt; e++) {
+                for (unsigned int b = 0; b < slot_cnt; b++) {
+                    reads_from_q_sum = reads_from_q_sum +
+                                       b2i(read_slot_[e][b][t][deq_k] &&
+                                           buf_in_[b][t][deq_k] == (int) q);
+                }
+            }
+            snprintf(constr_name, sizeof(constr_name), "sb_release_in_from_reads_q%u_t%u_k%u", q, t, deq_k);
+            // Ingress release for queue q must exactly match reads sourced from queue q.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                b2i(release_in_[q][t][deq_k]) == reads_from_q_sum));  
+
+            release_in_sum = release_in_sum + b2i(release_in_[q][t][deq_k]);
             release_hdr_sum = release_hdr_sum + b2i(release_hdr_[q][t][deq_k]);
         }
         for (unsigned int e = 0; e < eg_cnt; e++) {
-            release_eg_sum = release_eg_sum + b2i(release_eg_lossless_[e][t][deq_k]);
+            release_eg_sum = release_eg_sum + b2i(release_e_[e][t][deq_k]);
         }
 
-        snprintf(constr_name, sizeof(constr_name), "sb_release_ing_match_read_t%u_k%u", t, deq_k);
+        snprintf(constr_name, sizeof(constr_name), "sb_release_in_match_read_t%u_k%u", t, deq_k);
         // Total ingress releases must match total reads in the deq micro-step.
-        new_constr_map.insert(named_constr(constr_name, release_ing_sum == read_sum));
-        snprintf(constr_name, sizeof(constr_name), "sb_release_eg_match_read_t%u_k%u", t, deq_k);
+        new_constr_map.insert(named_constr(constr_name, release_in_sum == read_sum));
+        snprintf(constr_name, sizeof(constr_name), "sb_release_e_match_read_t%u_k%u", t, deq_k);
         // Total egress releases must match total reads in the deq micro-step.
         new_constr_map.insert(named_constr(constr_name, release_eg_sum == read_sum));
         snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_zero_t%u_k%u", t, deq_k);
@@ -910,10 +924,10 @@ void SharedBufferPoint::add_out_queue_constrs() {
                 reads_this_e_t_sum = reads_this_e_t_sum + b2i(read_slot_[e][b][t][deq_k]);
             }
 
-            snprintf(constr_name, sizeof(constr_name), "sb_release_eg_def_e%u_t%u_k%u", e, t, deq_k);
+            snprintf(constr_name, sizeof(constr_name), "sb_release_e_def_e%u_t%u_k%u", e, t, deq_k);
             // Egress release flag is true iff this egress reads at least one slot in deq micro-step.
             new_constr_map.insert(
-                named_constr(constr_name, release_eg_lossless_[e][t][deq_k] == (reads_this_e_t_sum > 0)));
+                named_constr(constr_name, release_e_[e][t][deq_k] == (reads_this_e_t_sum > 0)));
             snprintf(constr_name, sizeof(constr_name), "sb_read_deq_eq_e%u_t%u_k%u", e, t, deq_k);
             // Read count for this egress equals out-queue deq count at time t.
             new_constr_map.insert(named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
