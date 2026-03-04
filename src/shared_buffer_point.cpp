@@ -13,154 +13,723 @@ SharedBufferPoint::SharedBufferPoint(unsigned int total_time, SharedBufferPointI
 ContentionPoint(total_time), sb_info(info) {
 }
 
+unsigned int SharedBufferPoint::micro_step_cnt() const {
+    return (unsigned int) in_queues.size() + 1;
+}
+
+unsigned int SharedBufferPoint::deq_step_idx() const {
+    if (sb_info.timing_mode == SharedBufferPointInfo::TimingMode::DEQ_FIRST) return 0;
+    return (unsigned int) in_queues.size();
+}
+
+int SharedBufferPoint::ingress_queue_for_step(unsigned int k) const {
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    if (sb_info.timing_mode == SharedBufferPointInfo::TimingMode::DEQ_FIRST) {
+        if (k == 0 || k > in_cnt) return -1;
+        return (int) (k - 1);
+    }
+
+    if (k >= in_cnt) return -1;
+    return (int) k;
+}
+
+unsigned int SharedBufferPoint::ingress_pool_cap() const {
+    if (sb_info.ingress_pool_size > 0) return sb_info.ingress_pool_size;
+    return sb_info.buffer_slot_cnt;
+}
+
+unsigned int SharedBufferPoint::headroom_pool_cap() const {
+    if (sb_info.headroom_pool_size > 0) return sb_info.headroom_pool_size;
+    return sb_info.buffer_slot_cnt;
+}
+
+unsigned int SharedBufferPoint::egress_lossless_pool_cap() const {
+    if (sb_info.egress_lossless_pool_size > 0) return sb_info.egress_lossless_pool_size;
+    return sb_info.buffer_slot_cnt;
+}
+
+void SharedBufferPoint::init_shared_vars() {
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
+    const unsigned int micro_steps = micro_step_cnt();
+    const unsigned int k_states = micro_steps + 1;
+
+    admit_in_.clear();
+    admit_e_.clear();
+    admit_.clear();
+    // drop_or_block_.clear();
+    alloc_ing_.clear();
+    release_ing_.clear();
+    alloc_hdr_.clear();
+    release_hdr_.clear();
+    alloc_eg_lossless_.clear();
+    release_eg_lossless_.clear();
+
+    buf_used_.clear();
+    ingress_pool_occ_.clear();
+    ingress_pool_total_occ_.clear();
+    headroom_pool_occ_.clear();
+    headroom_pool_total_occ_.clear();
+    egress_lossless_pool_occ_.clear();
+    egress_lossless_pool_total_occ_.clear();
+
+    write_slot_.clear();
+    read_slot_.clear();
+
+    admit_in_.resize(in_cnt);
+    admit_e_.resize(eg_cnt);
+    admit_.resize(in_cnt);
+    // drop_or_block_.resize(in_cnt);
+    alloc_ing_.resize(in_cnt);
+    release_ing_.resize(in_cnt);
+    alloc_hdr_.resize(in_cnt);
+    release_hdr_.resize(in_cnt);
+    alloc_eg_lossless_.resize(eg_cnt);
+    release_eg_lossless_.resize(eg_cnt);
+
+    buf_used_.resize(slot_cnt);
+    ingress_pool_occ_.resize(in_cnt);
+    headroom_pool_occ_.resize(in_cnt);
+    egress_lossless_pool_occ_.resize(eg_cnt);
+
+    write_slot_.resize(in_cnt);
+    read_slot_.resize(eg_cnt);
+    ingress_pool_total_occ_.resize(total_time);
+    headroom_pool_total_occ_.resize(total_time);
+    egress_lossless_pool_total_occ_.resize(total_time);
+
+    char vname[120];
+
+    for (unsigned int b = 0; b < slot_cnt; b++) {
+        buf_used_[b].resize(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(vname, sizeof(vname), "sb_buf_used[%u][%u][%u]", b, t, k);
+                buf_used_[b][t].push_back(net_ctx.bool_const(vname));
+            }
+        }
+    }
+
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        write_slot_[q].resize(slot_cnt);
+        admit_in_[q].resize(total_time);
+        admit_[q].resize(total_time);
+        // drop_or_block_[q].resize(total_time);
+        alloc_ing_[q].resize(total_time);
+        release_ing_[q].resize(total_time);
+        alloc_hdr_[q].resize(total_time);
+        release_hdr_[q].resize(total_time);
+        ingress_pool_occ_[q].resize(total_time);
+        headroom_pool_occ_[q].resize(total_time);
+
+        for (unsigned int t = 0; t < total_time; t++) {
+            for (unsigned int k = 0; k < micro_steps; k++) {
+                snprintf(vname, sizeof(vname), "sb_admit_in[%u][%u][%u]", q, t, k);
+                admit_in_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_admit[%u][%u][%u]", q, t, k);
+                admit_[q][t].push_back(net_ctx.bool_const(vname));
+                // snprintf(vname, sizeof(vname), "sb_drop_or_block[%u][%u][%u]", q, t, k);
+                // drop_or_block_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_alloc_ing[%u][%u][%u]", q, t, k);
+                alloc_ing_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_release_ing[%u][%u][%u]", q, t, k);
+                release_ing_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_alloc_hdr[%u][%u][%u]", q, t, k);
+                alloc_hdr_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_release_hdr[%u][%u][%u]", q, t, k);
+                release_hdr_[q][t].push_back(net_ctx.bool_const(vname));
+            }
+
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(vname, sizeof(vname), "sb_ingress_pool_occ[%u][%u][%u]", q, t, k);
+                ingress_pool_occ_[q][t].push_back(net_ctx.int_const(vname));
+                snprintf(vname, sizeof(vname), "sb_headroom_pool_occ[%u][%u][%u]", q, t, k);
+                headroom_pool_occ_[q][t].push_back(net_ctx.int_const(vname));
+            }
+        }
+
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            write_slot_[q][b].resize(total_time);
+            for (unsigned int t = 0; t < total_time; t++) {
+                for (unsigned int k = 0; k < micro_steps; k++) {
+                    snprintf(vname, sizeof(vname), "sb_write_slot[%u][%u][%u][%u]", q, b, t, k);
+                    write_slot_[q][b][t].push_back(net_ctx.bool_const(vname));
+                }
+            }
+        }
+    }
+
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int k = 0; k < k_states; k++) {
+            snprintf(vname, sizeof(vname), "sb_ingress_pool_total_occ[%u][%u]", t, k);
+            ingress_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
+            snprintf(vname, sizeof(vname), "sb_headroom_pool_total_occ[%u][%u]", t, k);
+            headroom_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
+            snprintf(vname, sizeof(vname), "sb_egress_lossless_pool_total_occ[%u][%u]", t, k);
+            egress_lossless_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
+        }
+    }
+
+    for (unsigned int e = 0; e < eg_cnt; e++) {
+        read_slot_[e].resize(slot_cnt);
+        admit_e_[e].resize(total_time);
+        alloc_eg_lossless_[e].resize(total_time);
+        release_eg_lossless_[e].resize(total_time);
+        egress_lossless_pool_occ_[e].resize(total_time);
+
+        for (unsigned int t = 0; t < total_time; t++) {
+            for (unsigned int k = 0; k < micro_steps; k++) {
+                snprintf(vname, sizeof(vname), "sb_admit_e[%u][%u][%u]", e, t, k);
+                admit_e_[e][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_alloc_eg_lossless[%u][%u][%u]", e, t, k);
+                alloc_eg_lossless_[e][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_release_eg_lossless[%u][%u][%u]", e, t, k);
+                release_eg_lossless_[e][t].push_back(net_ctx.bool_const(vname));
+            }
+
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(vname, sizeof(vname), "sb_egress_lossless_pool_occ[%u][%u][%u]", e, t, k);
+                egress_lossless_pool_occ_[e][t].push_back(net_ctx.int_const(vname));
+            }
+        }
+
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            read_slot_[e][b].resize(total_time);
+            for (unsigned int t = 0; t < total_time; t++) {
+                for (unsigned int k = 0; k < micro_steps; k++) {
+                    snprintf(vname, sizeof(vname), "sb_read_slot[%u][%u][%u][%u]", e, b, t, k);
+                    read_slot_[e][b][t].push_back(net_ctx.bool_const(vname));
+                }
+            }
+        }
+    }
+
+    shared_vars_initialized_ = true;
+}
+
+void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map) {
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
+    const unsigned int ingress_pool_cap_cnt = ingress_pool_cap();
+    const unsigned int headroom_pool_cap_cnt = headroom_pool_cap();
+    const unsigned int egress_lossless_pool_cap_cnt = egress_lossless_pool_cap();
+    const unsigned int micro_steps = micro_step_cnt();
+    const unsigned int k_states = micro_steps + 1;
+    const unsigned int deq_k = deq_step_idx();
+
+    const expr int0 = net_ctx.int_val(0);
+    const expr int1 = net_ctx.int_val(1);
+    const expr bool0 = net_ctx.bool_val(false);
+
+    auto b2i = [&](const expr& b) { return ite(b, int1, int0); };
+
+    char constr_name[160];
+
+    // Enforce micro-step role semantics: each k is either one ingress action or one global deq step.
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int k = 0; k < micro_steps; k++) {
+            const int active_q = ingress_queue_for_step(k);
+            const bool is_deq_step = (k == deq_k);
+
+            for (unsigned int q = 0; q < in_cnt; q++) {
+                if ((int) q != active_q) {
+                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_admit_in_q%u_t%u_k%u", q, t, k);
+                    // Inactive ingress queue cannot request admission at this micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !admit_in_[q][t][k]));
+                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_admit_q%u_t%u_k%u", q, t, k);
+                    // Inactive ingress queue cannot be admitted at this micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
+                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_ing_q%u_t%u_k%u", q, t, k);
+                    // Inactive ingress queue cannot allocate ingress pool at this micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !alloc_ing_[q][t][k]));
+                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_hdr_q%u_t%u_k%u", q, t, k);
+                    // Inactive ingress queue cannot allocate headroom pool at this micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
+                }
+
+                if (!is_deq_step) {
+                    snprintf(constr_name, sizeof(constr_name), "sb_release_ing_non_deq_q%u_t%u_k%u", q, t, k);
+                    // Ingress-pool release is only allowed at the dedicated deq micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !release_ing_[q][t][k]));
+                }
+
+                snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_disabled_q%u_t%u_k%u", q, t, k);
+                // Headroom release is disabled in the current model revision.
+                new_constr_map.insert(named_constr(constr_name, !release_hdr_[q][t][k]));
+
+                for (unsigned int b = 0; b < slot_cnt; b++) {
+                    if (is_deq_step || (int) q != active_q) {
+                        snprintf(constr_name,
+                                 sizeof(constr_name),
+                                 "sb_write_inactive_q%u_b%u_t%u_k%u",
+                                 q,
+                                 b,
+                                 t,
+                                 k);
+                        // Only the active ingress queue in an ingress micro-step may write a slot.
+                        new_constr_map.insert(named_constr(constr_name, !write_slot_[q][b][t][k]));
+                    }
+                }
+            }
+
+            for (unsigned int e = 0; e < eg_cnt; e++) {
+                if (is_deq_step) {
+                    snprintf(constr_name, sizeof(constr_name), "sb_admit_e_deq_step_e%u_t%u_k%u", e, t, k);
+                    // Egress admission gate is not used during the deq micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !admit_e_[e][t][k]));
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_alloc_eg_non_ingress_e%u_t%u_k%u",
+                             e,
+                             t,
+                             k);
+                    // Egress lossless allocation is only defined in ingress micro-steps.
+                    new_constr_map.insert(named_constr(constr_name, !alloc_eg_lossless_[e][t][k]));
+                } else {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_release_eg_non_deq_e%u_t%u_k%u",
+                             e,
+                             t,
+                             k);
+                    // Egress release is only allowed at the dedicated deq micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !release_eg_lossless_[e][t][k]));
+
+                    for (unsigned int b = 0; b < slot_cnt; b++) {
+                        snprintf(constr_name,
+                                 sizeof(constr_name),
+                                 "sb_read_non_deq_e%u_b%u_t%u_k%u",
+                                 e,
+                                 b,
+                                 t,
+                                 k);
+                        // Slot reads are disallowed outside of the dedicated deq micro-step.
+                        new_constr_map.insert(named_constr(constr_name, !read_slot_[e][b][t][k]));
+                    }
+                }
+            }
+
+            if (active_q >= 0) {
+                const unsigned int q = (unsigned int) active_q;
+                Queue* inq = in_queues[q];
+                expr pkt = inq->enqs(0)[t];
+                expr has_enq = net_ctx.pkt2val(pkt);
+                expr dst = net_ctx.pkt2meta1(pkt);
+                expr dst_eg = dst % net_ctx.int_val((int) eg_cnt);
+
+                expr_vector route_cases(net_ctx.z3_ctx());
+                for (unsigned int e = 0; e < eg_cnt; e++) {
+                    expr route_to_e = dst_eg == net_ctx.int_val((int) e);
+                    expr admit_def = admit_[q][t][k] == (admit_in_[q][t][k] && admit_e_[e][t][k]);
+                    route_cases.push_back(implies(has_enq && route_to_e, admit_def));
+
+                    snprintf(constr_name, sizeof(constr_name), "sb_admit_e_non_route_false_q%u_e%u_t%u_k%u", q, e, t, k);
+                    // In an ingress micro-step, egress gate e is forced false when the packet is empty
+                    // or when e is not the routed destination for this packet.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(!has_enq || !route_to_e, !admit_e_[e][t][k])));
+                }
+                snprintf(constr_name, sizeof(constr_name), "sb_admit_route_q%u_t%u_k%u", q, t, k);
+                // Admission result follows the routed egress gate selected by packet destination.
+                new_constr_map.insert(named_constr(constr_name, mk_and(route_cases)));
+
+                snprintf(constr_name, sizeof(constr_name), "sb_alloc_ing_def_q%u_t%u_k%u", q, t, k);
+                // Ingress allocation tracks successful admission one-to-one.
+                new_constr_map.insert(named_constr(constr_name, alloc_ing_[q][t][k] == admit_[q][t][k]));
+                snprintf(constr_name, sizeof(constr_name), "sb_alloc_hdr_zero_q%u_t%u_k%u", q, t, k);
+                // Headroom allocation path is disabled in this model version.
+                new_constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
+
+                // Empty enq guards
+                snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_admit_in_q%u_t%u_k%u", q, t, k);
+                // Empty input packet means no ingress-side admission request.
+                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !admit_in_[q][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_admit_q%u_t%u_k%u", q, t, k);
+                // Empty input packet means no final admission.
+                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !admit_[q][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_alloc_ing_q%u_t%u_k%u", q, t, k);
+                // Empty input packet cannot allocate ingress pool.
+                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !alloc_ing_[q][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_alloc_hdr_q%u_t%u_k%u", q, t, k);
+                // Empty input packet cannot allocate headroom pool.
+                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !alloc_hdr_[q][t][k])));
+
+                for (unsigned int e = 0; e < eg_cnt; e++) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_alloc_eg_route_e%u_q%u_t%u_k%u",
+                             e,
+                             q,
+                             t,
+                             k);
+                    // Egress lossless allocation is charged to the routed egress on successful admit.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        alloc_eg_lossless_[e][t][k] ==
+                            (admit_[q][t][k] && (dst_eg == net_ctx.int_val((int) e)))));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_noop_on_empty_alloc_eg_e%u_q%u_t%u_k%u",
+                             e,
+                             q,
+                             t,
+                             k);
+                    // Empty input packet cannot allocate any egress lossless pool.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(!has_enq, !alloc_eg_lossless_[e][t][k])));
+                }
+
+                expr writes_sum = int0;
+                for (unsigned int b = 0; b < slot_cnt; b++) {
+                    writes_sum = writes_sum + b2i(write_slot_[q][b][t][k]);
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_write_implies_admit_q%u_b%u_t%u_k%u",
+                             q,
+                             b,
+                             t,
+                             k);
+                    // Any write action must correspond to a successful admission.
+                    new_constr_map.insert(
+                        named_constr(constr_name, implies(write_slot_[q][b][t][k], admit_[q][t][k])));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_write_requires_empty_q%u_b%u_t%u_k%u",
+                             q,
+                             b,
+                             t,
+                             k);
+                    // Writes can only target currently empty slots.
+                    new_constr_map.insert(
+                        named_constr(constr_name, implies(write_slot_[q][b][t][k], !buf_used_[b][t][k])));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_noop_on_empty_write_q%u_b%u_t%u_k%u",
+                             q,
+                             b,
+                             t,
+                             k);
+                    // Empty input packet cannot write to any slot.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(!has_enq, !write_slot_[q][b][t][k])));
+                }
+
+                snprintf(constr_name, sizeof(constr_name), "sb_admit_write_eq_q%u_t%u_k%u", q, t, k);
+                // Exactly one slot is written iff admission succeeds; otherwise no slot is written.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    writes_sum == ite(admit_[q][t][k], int1, int0)));
+            }
+
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                expr slot_writers_sum = int0;
+                expr slot_readers_sum = int0;
+
+                for (unsigned int q = 0; q < in_cnt; q++) {
+                    slot_writers_sum = slot_writers_sum + b2i(write_slot_[q][b][t][k]);
+                }
+                for (unsigned int e = 0; e < eg_cnt; e++) {
+                    slot_readers_sum = slot_readers_sum + b2i(read_slot_[e][b][t][k]);
+                }
+
+                snprintf(constr_name, sizeof(constr_name), "sb_single_writer_b%u_t%u_k%u", b, t, k);
+                // A slot has at most one writer in each micro-step.
+                new_constr_map.insert(named_constr(constr_name, slot_writers_sum <= 1));
+                snprintf(constr_name, sizeof(constr_name), "sb_single_reader_b%u_t%u_k%u", b, t, k);
+                // A slot has at most one reader in each micro-step.
+                new_constr_map.insert(named_constr(constr_name, slot_readers_sum <= 1));
+                snprintf(constr_name, sizeof(constr_name), "sb_no_rw_conflict_b%u_t%u_k%u", b, t, k);
+                // Read and write on the same slot cannot happen simultaneously in one micro-step.
+                new_constr_map.insert(named_constr(constr_name, slot_writers_sum + slot_readers_sum <= 1));
+            }
+        }
+    }
+
+    // Pool and per-queue bounds for each state snapshot [t][k].
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int k = 0; k < k_states; k++) {
+            expr ing_sum = int0;
+            expr hdr_sum = int0;
+            expr eg_sum = int0;
+
+            for (unsigned int q = 0; q < in_cnt; q++) {
+                ing_sum = ing_sum + ingress_pool_occ_[q][t][k];
+                hdr_sum = hdr_sum + headroom_pool_occ_[q][t][k];
+
+                snprintf(constr_name, sizeof(constr_name), "sb_ing_pos_lb_q%u_t%u_k%u", q, t, k);
+                // Ingress pool ledger must be non-negative.
+                new_constr_map.insert(named_constr(constr_name, ingress_pool_occ_[q][t][k] >= 0));
+                snprintf(constr_name, sizeof(constr_name), "sb_ing_pos_ub_q%u_t%u_k%u", q, t, k);
+                // Ingress pool ledger is bounded by configured ingress pool capacity.
+                new_constr_map.insert(
+                    named_constr(constr_name, ingress_pool_occ_[q][t][k] <= (int) ingress_pool_cap_cnt));
+                snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_lb_q%u_t%u_k%u", q, t, k);
+                // Headroom pool ledger must be non-negative.
+                new_constr_map.insert(named_constr(constr_name, headroom_pool_occ_[q][t][k] >= 0));
+                snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_ub_q%u_t%u_k%u", q, t, k);
+                // Headroom pool ledger is bounded by configured headroom pool capacity.
+                new_constr_map.insert(
+                    named_constr(constr_name, headroom_pool_occ_[q][t][k] <= (int) headroom_pool_cap_cnt));
+
+                if (k < micro_steps) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_release_ing_requires_credit_q%u_t%u_k%u",
+                             q,
+                             t,
+                             k);
+                    // Ingress release requires available ingress-pool credit.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(release_ing_[q][t][k], ingress_pool_occ_[q][t][k] > 0)));
+                }
+            }
+
+            for (unsigned int e = 0; e < eg_cnt; e++) {
+                eg_sum = eg_sum + egress_lossless_pool_occ_[e][t][k];
+
+                snprintf(constr_name, sizeof(constr_name), "sb_eg_pos_lb_e%u_t%u_k%u", e, t, k);
+                // Egress-lossless ledger must be non-negative.
+                new_constr_map.insert(named_constr(constr_name, egress_lossless_pool_occ_[e][t][k] >= 0));
+                snprintf(constr_name, sizeof(constr_name), "sb_eg_pos_ub_e%u_t%u_k%u", e, t, k);
+                // Egress-lossless ledger is bounded by configured egress-lossless pool capacity.
+                new_constr_map.insert(
+                    named_constr(constr_name,
+                                 egress_lossless_pool_occ_[e][t][k] <=
+                                     (int) egress_lossless_pool_cap_cnt));
+
+                if (k < micro_steps) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_release_eg_requires_credit_e%u_t%u_k%u",
+                             e,
+                             t,
+                             k);
+                    // Egress release requires available egress-lossless credit.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(release_eg_lossless_[e][t][k], egress_lossless_pool_occ_[e][t][k] > 0)));
+                }
+            }
+
+            snprintf(constr_name, sizeof(constr_name), "sb_ing_used_sum_t%u_k%u", t, k);
+            // Aggregate ingress-pool usage equals sum of all per-queue ingress ledgers.
+            new_constr_map.insert(named_constr(constr_name, ingress_pool_total_occ_[t][k] == ing_sum));
+            snprintf(constr_name, sizeof(constr_name), "sb_hdr_used_sum_t%u_k%u", t, k);
+            // Aggregate headroom usage equals sum of all per-queue headroom ledgers.
+            new_constr_map.insert(named_constr(constr_name, headroom_pool_total_occ_[t][k] == hdr_sum));
+            snprintf(constr_name, sizeof(constr_name), "sb_eg_used_sum_t%u_k%u", t, k);
+            // Aggregate egress-lossless usage equals sum of all per-egress ledgers.
+            new_constr_map.insert(named_constr(constr_name, egress_lossless_pool_total_occ_[t][k] == eg_sum));
+
+            snprintf(constr_name, sizeof(constr_name), "sb_ing_used_lb_t%u_k%u", t, k);
+            // Aggregate ingress usage must be non-negative.
+            new_constr_map.insert(named_constr(constr_name, ingress_pool_total_occ_[t][k] >= 0));
+            snprintf(constr_name, sizeof(constr_name), "sb_ing_used_ub_t%u_k%u", t, k);
+            // Aggregate ingress usage is bounded by configured ingress pool capacity.
+            new_constr_map.insert(
+                named_constr(constr_name, ingress_pool_total_occ_[t][k] <= (int) ingress_pool_cap_cnt));
+            snprintf(constr_name, sizeof(constr_name), "sb_hdr_used_lb_t%u_k%u", t, k);
+            // Aggregate headroom usage must be non-negative.
+            new_constr_map.insert(named_constr(constr_name, headroom_pool_total_occ_[t][k] >= 0));
+            snprintf(constr_name, sizeof(constr_name), "sb_hdr_used_ub_t%u_k%u", t, k);
+            // Aggregate headroom usage is bounded by configured headroom pool capacity.
+            new_constr_map.insert(
+                named_constr(constr_name, headroom_pool_total_occ_[t][k] <= (int) headroom_pool_cap_cnt));
+            snprintf(constr_name, sizeof(constr_name), "sb_eg_used_lb_t%u_k%u", t, k);
+            // Aggregate egress-lossless usage must be non-negative.
+            new_constr_map.insert(named_constr(constr_name, egress_lossless_pool_total_occ_[t][k] >= 0));
+            snprintf(constr_name, sizeof(constr_name), "sb_eg_used_ub_t%u_k%u", t, k);
+            // Aggregate egress-lossless usage is bounded by configured egress-lossless pool capacity.
+            new_constr_map.insert(
+                named_constr(constr_name,
+                             egress_lossless_pool_total_occ_[t][k] <=
+                                 (int) egress_lossless_pool_cap_cnt));
+        }
+    }
+
+    // Intra-slot state transitions: [t][k] -> [t][k+1].
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int k = 0; k < micro_steps; k++) {
+            for (unsigned int q = 0; q < in_cnt; q++) {
+                snprintf(constr_name, sizeof(constr_name), "sb_ing_pos_step_q%u_t%u_k%u", q, t, k);
+                // Ingress-pool ledger transition applies alloc/release delta across one micro-step.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    ingress_pool_occ_[q][t][k + 1] ==
+                        ingress_pool_occ_[q][t][k] + b2i(alloc_ing_[q][t][k]) -
+                            b2i(release_ing_[q][t][k])));
+
+                snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_step_q%u_t%u_k%u", q, t, k);
+                // Headroom ledger transition applies alloc/release delta across one micro-step.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    headroom_pool_occ_[q][t][k + 1] ==
+                        headroom_pool_occ_[q][t][k] + b2i(alloc_hdr_[q][t][k]) -
+                            b2i(release_hdr_[q][t][k])));
+            }
+
+            for (unsigned int e = 0; e < eg_cnt; e++) {
+                snprintf(constr_name, sizeof(constr_name), "sb_eg_pos_step_e%u_t%u_k%u", e, t, k);
+                // Egress-lossless ledger transition applies alloc/release delta across one micro-step.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    egress_lossless_pool_occ_[e][t][k + 1] ==
+                        egress_lossless_pool_occ_[e][t][k] + b2i(alloc_eg_lossless_[e][t][k]) -
+                            b2i(release_eg_lossless_[e][t][k])));
+            }
+
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                expr any_write = bool0;
+                expr any_read = bool0;
+
+                for (unsigned int q = 0; q < in_cnt; q++) {
+                    any_write = any_write || write_slot_[q][b][t][k];
+                }
+                for (unsigned int e = 0; e < eg_cnt; e++) {
+                    any_read = any_read || read_slot_[e][b][t][k];
+                }
+
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_step_b%u_t%u_k%u", b, t, k);
+                // Slot occupancy transition: read clears, write sets, otherwise state carries over.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    buf_used_[b][t][k + 1] == ((buf_used_[b][t][k] && !any_read) || any_write)));
+            }
+        }
+    }
+
+    // Accounting closure at deq micro-step.
+    for (unsigned int t = 0; t < total_time; t++) {
+        expr read_sum = int0;
+        for (unsigned int e = 0; e < eg_cnt; e++) {
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                read_sum = read_sum + b2i(read_slot_[e][b][t][deq_k]);
+            }
+        }
+
+        expr release_ing_sum = int0;
+        expr release_hdr_sum = int0;
+        expr release_eg_sum = int0;
+        for (unsigned int q = 0; q < in_cnt; q++) {
+            release_ing_sum = release_ing_sum + b2i(release_ing_[q][t][deq_k]);
+            release_hdr_sum = release_hdr_sum + b2i(release_hdr_[q][t][deq_k]);
+        }
+        for (unsigned int e = 0; e < eg_cnt; e++) {
+            release_eg_sum = release_eg_sum + b2i(release_eg_lossless_[e][t][deq_k]);
+        }
+
+        snprintf(constr_name, sizeof(constr_name), "sb_release_ing_match_read_t%u_k%u", t, deq_k);
+        // Total ingress releases must match total reads in the deq micro-step.
+        new_constr_map.insert(named_constr(constr_name, release_ing_sum == read_sum));
+        snprintf(constr_name, sizeof(constr_name), "sb_release_eg_match_read_t%u_k%u", t, deq_k);
+        // Total egress releases must match total reads in the deq micro-step.
+        new_constr_map.insert(named_constr(constr_name, release_eg_sum == read_sum));
+        snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_zero_t%u_k%u", t, deq_k);
+        // Headroom release is disabled, so release sum is always zero.
+        new_constr_map.insert(named_constr(constr_name, release_hdr_sum == 0));
+    }
+}
+
+void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_constr_map) {
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
+    const unsigned int micro_steps = micro_step_cnt();
+
+    if (total_time == 0) return;
+
+    char constr_name[160];
+
+    // Initial state: empty shared-buffer and zero per-pool ledgers.
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        snprintf(constr_name, sizeof(constr_name), "sb_ing_pos_init_q%u", q);
+        // Initial ingress-pool ledger starts at zero.
+        new_constr_map.insert(named_constr(constr_name, ingress_pool_occ_[q][0][0] == 0));
+        snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_init_q%u", q);
+        // Initial headroom ledger starts at zero.
+        new_constr_map.insert(named_constr(constr_name, headroom_pool_occ_[q][0][0] == 0));
+    }
+    for (unsigned int e = 0; e < eg_cnt; e++) {
+        snprintf(constr_name, sizeof(constr_name), "sb_eg_pos_init_e%u", e);
+        // Initial egress-lossless ledger starts at zero.
+        new_constr_map.insert(named_constr(constr_name, egress_lossless_pool_occ_[e][0][0] == 0));
+    }
+    for (unsigned int b = 0; b < slot_cnt; b++) {
+        snprintf(constr_name, sizeof(constr_name), "sb_buf_init_empty_b%u", b);
+        // Initial slot occupancy is empty.
+        new_constr_map.insert(named_constr(constr_name, !buf_used_[b][0][0]));
+    }
+
+    // Cross-slot state handoff: [t][last_k] -> [t+1][0].
+    for (unsigned int t = 0; t + 1 < total_time; t++) {
+        for (unsigned int q = 0; q < in_cnt; q++) {
+            snprintf(constr_name, sizeof(constr_name), "sb_ing_handoff_q%u_t%u", q, t);
+            // End-of-slot ingress ledger becomes next slot's initial ingress ledger.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                ingress_pool_occ_[q][t + 1][0] == ingress_pool_occ_[q][t][micro_steps]));
+
+            snprintf(constr_name, sizeof(constr_name), "sb_hdr_handoff_q%u_t%u", q, t);
+            // End-of-slot headroom ledger becomes next slot's initial headroom ledger.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                headroom_pool_occ_[q][t + 1][0] == headroom_pool_occ_[q][t][micro_steps]));
+        }
+
+        for (unsigned int e = 0; e < eg_cnt; e++) {
+            snprintf(constr_name, sizeof(constr_name), "sb_eg_handoff_e%u_t%u", e, t);
+            // End-of-slot egress-lossless ledger becomes next slot's initial egress ledger.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                egress_lossless_pool_occ_[e][t + 1][0] == egress_lossless_pool_occ_[e][t][micro_steps]));
+        }
+
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            snprintf(constr_name, sizeof(constr_name), "sb_buf_handoff_b%u_t%u", b, t);
+            // End-of-slot slot occupancy becomes next slot's initial slot occupancy.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                buf_used_[b][t + 1][0] == buf_used_[b][t][micro_steps]));
+        }
+
+        snprintf(constr_name, sizeof(constr_name), "sb_ing_used_handoff_t%u", t);
+        // End-of-slot aggregate ingress usage is handed off to next slot initial state.
+        new_constr_map.insert(
+            named_constr(constr_name, ingress_pool_total_occ_[t + 1][0] == ingress_pool_total_occ_[t][micro_steps]));
+        snprintf(constr_name, sizeof(constr_name), "sb_hdr_used_handoff_t%u", t);
+        // End-of-slot aggregate headroom usage is handed off to next slot initial state.
+        new_constr_map.insert(
+            named_constr(constr_name, headroom_pool_total_occ_[t + 1][0] == headroom_pool_total_occ_[t][micro_steps]));
+        snprintf(constr_name, sizeof(constr_name), "sb_eg_used_handoff_t%u", t);
+        // End-of-slot aggregate egress usage is handed off to next slot initial state.
+        new_constr_map.insert(named_constr(
+            constr_name,
+            egress_lossless_pool_total_occ_[t + 1][0] == egress_lossless_pool_total_occ_[t][micro_steps]));
+    }
+}
+
 void SharedBufferPoint::add_in_queue_constrs() {
     ContentionPoint::add_in_queue_constrs();
 
     const unsigned int in_cnt = (unsigned int) in_queues.size();
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
-    const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
-
     if (in_cnt == 0 || eg_cnt == 0) return;
 
-    // Initialize admission vars
-    if (!shared_vars_initialized_) {
-        admit_in_.clear();
-        admit_e_.clear();
-        admit_.clear();
-        buf_used_.clear();
-        write_slot_.clear();
-        read_slot_.clear();
+    if (!shared_vars_initialized_) init_shared_vars();
 
-        admit_in_.resize(in_cnt);
-        admit_e_.resize(eg_cnt);
-        admit_.resize(in_cnt);
-        buf_used_.resize(slot_cnt);
-        write_slot_.resize(in_cnt);
-        read_slot_.resize(eg_cnt);
-
-        char vname[100];
-        // Shared-buffer slot occupancy vars
-        for (unsigned int b = 0; b < slot_cnt; b++) {
-            for (unsigned int t = 0; t < total_time; t++) {
-                snprintf(vname, sizeof(vname), "sb_buf_used[%u][%u]", b, t);
-                buf_used_[b].push_back(net_ctx.bool_const(vname));
-            }
-        }
-
-        // Ingress queue vars
-        for (unsigned int q = 0; q < in_cnt; q++) {
-            write_slot_[q].resize(slot_cnt);
-            for (unsigned int t = 0; t < total_time; t++) {
-                snprintf(vname, sizeof(vname), "sb_admit_in[%u][%u]", q, t);
-                admit_in_[q].push_back(net_ctx.bool_const(vname));
-                snprintf(vname, sizeof(vname), "sb_admit[%u][%u]", q, t);
-                admit_[q].push_back(net_ctx.bool_const(vname));
-            }
-
-            for (unsigned int b = 0; b < slot_cnt; b++) {
-                for (unsigned int t = 0; t < total_time; t++) {
-                    snprintf(vname, sizeof(vname), "sb_write_slot[%u][%u][%u]", q, b, t);
-                    write_slot_[q][b].push_back(net_ctx.bool_const(vname));
-                }
-            }
-        }
-
-        // Egress queue vars
-        for (unsigned int e = 0; e < eg_cnt; e++) {
-            read_slot_[e].resize(slot_cnt);
-            for (unsigned int t = 0; t < total_time; t++) {
-                snprintf(vname, sizeof(vname), "sb_admit_e[%u][%u]", e, t);
-                admit_e_[e].push_back(net_ctx.bool_const(vname));
-            }
-            for (unsigned int b = 0; b < slot_cnt; b++) {
-                for (unsigned int t = 0; t < total_time; t++) {
-                    snprintf(vname, sizeof(vname), "sb_read_slot[%u][%u][%u]", e, b, t);
-                    read_slot_[e][b].push_back(net_ctx.bool_const(vname));
-                }
-            }
-        }
-
-        shared_vars_initialized_ = true;
-    }
-
-    char constr_name[100];
     map<string, expr> new_constr_map;
-    for (unsigned int q = 0; q < in_cnt; q++) {
-        Queue* inq = in_queues[q];
-        for (unsigned int t = 0; t < total_time; t++) {
-            expr dst = net_ctx.pkt2meta1(inq->enqs(0)[t]);
-
-            expr egress_cnt = net_ctx.int_val((int) eg_cnt);
-            expr dst_eg = dst % egress_cnt;
-
-            // Admission is route-aware: for the egress selected by dst_eg, admit is true
-            // iff both ingress-side and egress-side admission gates are true.
-            expr_vector route_cases(net_ctx.z3_ctx());
-            for (unsigned int e = 0; e < eg_cnt; e++) {
-                expr route_to_e = dst_eg == net_ctx.int_val((int) e);
-                expr admit_def = admit_[q][t] == (admit_in_[q][t] && admit_e_[e][t]);
-                route_cases.push_back(implies(route_to_e, admit_def));
-            }
-
-            snprintf(constr_name, sizeof(constr_name), "sb_admit_def_q%u_t%u", q, t);
-            new_constr_map.insert(named_constr(constr_name, mk_and(route_cases)));
-
-            if (slot_cnt > 0) {
-                // Per (q,t): admitted traffic writes exactly one slot; non-admitted traffic writes none.
-                // Also enforce write_slot -> admit to prevent writes without admission.
-                expr writes_this_q_t_sum = net_ctx.int_val(0);
-                for (unsigned int b = 0; b < slot_cnt; b++) {
-                    writes_this_q_t_sum =
-                        writes_this_q_t_sum + ite(write_slot_[q][b][t],
-                                                  net_ctx.int_val(1),
-                                                  net_ctx.int_val(0));
-
-                    snprintf(constr_name,
-                             sizeof(constr_name),
-                             "sb_write_implies_admit_q%u_b%u_t%u",
-                             q,
-                             b,
-                             t);
-                    new_constr_map.insert(
-                        named_constr(constr_name, implies(write_slot_[q][b][t], admit_[q][t])));
-
-                    snprintf(constr_name,
-                             sizeof(constr_name),
-                             "sb_write_requires_empty_q%u_b%u_t%u",
-                             q,
-                             b,
-                             t);
-                    // TODO(shared-buffer): once buf_pkt_ init/transition constraints are implemented,
-                    // switch this guard to !net_ctx.pkt2val(buf_pkt_[b][t]).
-                    new_constr_map.insert(
-                        named_constr(constr_name, implies(write_slot_[q][b][t], !buf_used_[b][t])));
-                }
-
-                snprintf(constr_name, sizeof(constr_name), "sb_admit_write_eq_q%u_t%u", q, t);
-                new_constr_map.insert(named_constr(
-                    constr_name,
-                    writes_this_q_t_sum ==
-                        ite(admit_[q][t], net_ctx.int_val(1), net_ctx.int_val(0))));
-            }
-        }
-    }
-
-    if (slot_cnt > 0) {
-        for (unsigned int b = 0; b < slot_cnt; b++) {
-            for (unsigned int t = 0; t < total_time; t++) {
-                // Per (b,t): at most one ingress queue can write to the same physical slot.
-                expr slot_writers_sum = net_ctx.int_val(0);
-                for (unsigned int q = 0; q < in_cnt; q++) {
-                    slot_writers_sum = slot_writers_sum + ite(write_slot_[q][b][t],
-                                                              net_ctx.int_val(1),
-                                                              net_ctx.int_val(0));
-                }
-                snprintf(constr_name, sizeof(constr_name), "sb_slot_single_writer_b%u_t%u", b, t);
-                new_constr_map.insert(named_constr(constr_name, slot_writers_sum <= 1));
-            }
-        }
-    }
-
+    add_micro_step_constrs(new_constr_map);
+    add_cross_time_step_constrs(new_constr_map);
     add_constr_from_map(new_constr_map);
 }
 
@@ -169,48 +738,58 @@ void SharedBufferPoint::add_out_queue_constrs() {
 
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
     const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
+    const unsigned int deq_k = deq_step_idx();
     if (eg_cnt == 0 || slot_cnt == 0) return;
 
-    char constr_name[100];
+    const expr int0 = net_ctx.int_val(0);
+    const expr int1 = net_ctx.int_val(1);
+    auto b2i = [&](const expr& b) { return ite(b, int1, int0); };
+
+    char constr_name[160];
     map<string, expr> new_constr_map;
 
-    // For strict egress service, each egress reads exactly deq_cnt(e,t) slots at time t.
-    // With current queue config (max_deq=1), this enforces a 0/1 read action per egress per slot.
     for (unsigned int e = 0; e < eg_cnt; e++) {
         Queue* outq = out_queues[e];
         for (unsigned int t = 0; t < total_time; t++) {
-            expr reads_this_e_t_sum = net_ctx.int_val(0);
+            expr reads_this_e_t_sum = int0;
+
             for (unsigned int b = 0; b < slot_cnt; b++) {
                 snprintf(constr_name,
                          sizeof(constr_name),
-                         "sb_read_requires_nonempty_e%u_b%u_t%u",
+                         "sb_read_requires_nonempty_e%u_b%u_t%u_k%u",
                          e,
                          b,
-                         t);
-                // TODO(shared-buffer): once buf_pkt_ init/transition constraints are implemented,
-                // switch this guard to net_ctx.pkt2val(buf_pkt_[b][t]).
+                         t,
+                         deq_k);
+                // A read action can only target a slot that is currently occupied.
                 new_constr_map.insert(
-                    named_constr(constr_name, implies(read_slot_[e][b][t], buf_used_[b][t])));
-
-                reads_this_e_t_sum = reads_this_e_t_sum + ite(read_slot_[e][b][t],
-                                                              net_ctx.int_val(1),
-                                                              net_ctx.int_val(0));
+                    named_constr(constr_name, implies(read_slot_[e][b][t][deq_k], buf_used_[b][t][deq_k])));
+                reads_this_e_t_sum = reads_this_e_t_sum + b2i(read_slot_[e][b][t][deq_k]);
             }
-            snprintf(constr_name, sizeof(constr_name), "sb_read_deq_eq_e%u_t%u", e, t);
+
+            snprintf(constr_name, sizeof(constr_name), "sb_release_eg_def_e%u_t%u_k%u", e, t, deq_k);
+            // Egress release flag is true iff this egress reads at least one slot in deq micro-step.
+            new_constr_map.insert(
+                named_constr(constr_name, release_eg_lossless_[e][t][deq_k] == (reads_this_e_t_sum > 0)));
+            snprintf(constr_name, sizeof(constr_name), "sb_read_deq_eq_e%u_t%u_k%u", e, t, deq_k);
+            // Read count for this egress equals out-queue deq count at time t.
             new_constr_map.insert(named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
         }
     }
 
-    // A physical slot can be consumed by at most one egress in the same time step.
     for (unsigned int b = 0; b < slot_cnt; b++) {
         for (unsigned int t = 0; t < total_time; t++) {
-            expr slot_readers_sum = net_ctx.int_val(0);
+            expr slot_readers_sum = int0;
             for (unsigned int e = 0; e < eg_cnt; e++) {
-                slot_readers_sum = slot_readers_sum + ite(read_slot_[e][b][t],
-                                                          net_ctx.int_val(1),
-                                                          net_ctx.int_val(0));
+                slot_readers_sum = slot_readers_sum + b2i(read_slot_[e][b][t][deq_k]);
             }
-            snprintf(constr_name, sizeof(constr_name), "sb_slot_single_reader_b%u_t%u", b, t);
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "sb_slot_single_reader_b%u_t%u_k%u",
+                     b,
+                     t,
+                     deq_k);
+            // A slot can be read by at most one egress in the deq micro-step.
             new_constr_map.insert(named_constr(constr_name, slot_readers_sum <= 1));
         }
     }
