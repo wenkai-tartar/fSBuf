@@ -69,6 +69,7 @@ void SharedBufferPoint::init_shared_vars() {
     buf_pkt_.clear();
     buf_in_.clear();
     buf_e_.clear();
+    paused_.clear();
     ingress_pool_occ_.clear();
     ingress_pool_total_occ_.clear();
     headroom_pool_occ_.clear();
@@ -93,6 +94,7 @@ void SharedBufferPoint::init_shared_vars() {
     buf_pkt_.resize(slot_cnt);
     buf_in_.resize(slot_cnt);
     buf_e_.resize(slot_cnt);
+    paused_.resize(in_cnt);
     ingress_pool_occ_.resize(in_cnt);
     headroom_pool_occ_.resize(in_cnt);
     egress_lossless_pool_occ_.resize(eg_cnt);
@@ -130,10 +132,14 @@ void SharedBufferPoint::init_shared_vars() {
         release_in_[q].resize(total_time);
         alloc_hdr_[q].resize(total_time);
         release_hdr_[q].resize(total_time);
+        paused_[q].reserve(total_time);
         ingress_pool_occ_[q].resize(total_time);
         headroom_pool_occ_[q].resize(total_time);
 
         for (unsigned int t = 0; t < total_time; t++) {
+            snprintf(vname, sizeof(vname), "sb_paused[%u][%u]", q, t);
+            paused_[q].push_back(net_ctx.bool_const(vname));
+
             for (unsigned int k = 0; k < micro_steps; k++) {
                 snprintf(vname, sizeof(vname), "sb_admit_in[%u][%u][%u]", q, t, k);
                 admit_in_[q][t].push_back(net_ctx.bool_const(vname));
@@ -348,12 +354,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 // Admission result follows the routed egress gate selected by packet destination.
                 new_constr_map.insert(named_constr(constr_name, mk_and(route_cases)));
 
-                // TODO(shared-buffer): Parameterize per-queue alpha and use
-                // gamma_q = alpha_q * remaining_ingress_pool.
-                // Current model fixes alpha = 1.
-                expr gamma_q = net_ctx.int_val((int) ingress_pool_cap_cnt) - ingress_pool_total_occ_[t][k];
-                expr queue_paused =
-                    (headroom_pool_occ_[q][t][k] > 0) || (ingress_pool_occ_[q][t][k] >= gamma_q);
+                expr queue_paused = paused_[q][t];
 
                 snprintf(constr_name, sizeof(constr_name), "sb_alloc_in_by_threshold_q%u_t%u_k%u", q, t, k);
                 // If queue q is not paused at this step, admitted packets are accounted in ingress pool.
@@ -809,6 +810,7 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
     const unsigned int in_cnt = (unsigned int) in_queues.size();
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
     const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
+    const unsigned int ingress_pool_cap_cnt = ingress_pool_cap();
     const unsigned int micro_steps = micro_step_cnt();
 
     if (total_time == 0) return;
@@ -823,6 +825,9 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
         snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_init_q%u", q);
         // Initial headroom ledger starts at zero.
         new_constr_map.insert(named_constr(constr_name, headroom_pool_occ_[q][0][0] == 0));
+        snprintf(constr_name, sizeof(constr_name), "sb_paused_init_q%u", q);
+        // Initial pause state is resumed (not paused).
+        new_constr_map.insert(named_constr(constr_name, !paused_[q][0]));
     }
     for (unsigned int e = 0; e < eg_cnt; e++) {
         snprintf(constr_name, sizeof(constr_name), "sb_eg_pos_init_e%u", e);
@@ -855,6 +860,21 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
             new_constr_map.insert(named_constr(
                 constr_name,
                 headroom_pool_occ_[q][t + 1][0] == headroom_pool_occ_[q][t][micro_steps]));
+
+            expr in_end = ingress_pool_occ_[q][t][micro_steps];
+            expr in_total_end = ingress_pool_total_occ_[t][micro_steps];
+            expr hdr_end = headroom_pool_occ_[q][t][micro_steps];
+            // TODO(shared-buffer): Parameterize per-queue alpha and use
+            // gamma_q_end = alpha_q * remaining_ingress_pool_end.
+            // Current model fixes alpha = 1.
+            expr gamma_q_end = net_ctx.int_val((int) ingress_pool_cap_cnt) - in_total_end;
+            expr xoff_trig = in_end >= gamma_q_end;
+            expr xon_trig = paused_[q][t] && (hdr_end == 0) && (in_end < gamma_q_end);
+            expr paused_next = (paused_[q][t] || xoff_trig) && !xon_trig;
+
+            snprintf(constr_name, sizeof(constr_name), "sb_paused_handoff_q%u_t%u", q, t);
+            // Pause state has one-slot delay: triggers at t take effect at t+1.
+            new_constr_map.insert(named_constr(constr_name, paused_[q][t + 1] == paused_next));
         }
 
         for (unsigned int e = 0; e < eg_cnt; e++) {

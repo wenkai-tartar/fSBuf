@@ -44,6 +44,7 @@ protected:
     vector<vector<vector<expr>>> buf_in_; // [b][t][k] int
     vector<vector<vector<expr>>> buf_e_; // [b][t][k] int
     // k indexes micro-state snapshots within a coarse slot t.
+    vector<vector<expr>> paused_; // [q][t] bool, effective pause state for slot t
     vector<vector<vector<expr>>> ingress_pool_occ_; // [q][t][k] int
     vector<vector<expr>> ingress_pool_total_occ_; // [t][k] int
     vector<vector<vector<expr>>> headroom_pool_occ_; // [q][t][k] int
