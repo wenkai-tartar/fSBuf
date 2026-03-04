@@ -39,14 +39,11 @@ protected:
     SharedBufferPointInfo sb_info;
     bool shared_vars_initialized_ = false;
 
-    // TODO(shared-buffer): model per-slot packet state across time (init + transition),
-    // then replace buf_used_ guards with pkt2val(buf_pkt_[b][t]).
-    vector<vector<expr>> buf_pkt_;
-    vector<vector<expr>> buf_ing_;
-    vector<vector<expr>> buf_eg_;
-    // State variables upgraded to micro-step granularity.
+    // Per-slot identity state at micro-step granularity [b][t][k].
+    vector<vector<vector<expr>>> buf_pkt_; // [b][t][k] pkt
+    vector<vector<vector<expr>>> buf_in_; // [b][t][k] int
+    vector<vector<vector<expr>>> buf_e_; // [b][t][k] int
     // k indexes micro-state snapshots within a coarse slot t.
-    vector<vector<vector<expr>>> buf_used_; // [b][t][k] bool
     vector<vector<vector<expr>>> ingress_pool_occ_; // [q][t][k] int
     vector<vector<expr>> ingress_pool_total_occ_; // [t][k] int
     vector<vector<vector<expr>>> headroom_pool_occ_; // [q][t][k] int

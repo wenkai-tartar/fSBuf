@@ -66,7 +66,9 @@ void SharedBufferPoint::init_shared_vars() {
     alloc_eg_lossless_.clear();
     release_eg_lossless_.clear();
 
-    buf_used_.clear();
+    buf_pkt_.clear();
+    buf_in_.clear();
+    buf_e_.clear();
     ingress_pool_occ_.clear();
     ingress_pool_total_occ_.clear();
     headroom_pool_occ_.clear();
@@ -88,7 +90,9 @@ void SharedBufferPoint::init_shared_vars() {
     alloc_eg_lossless_.resize(eg_cnt);
     release_eg_lossless_.resize(eg_cnt);
 
-    buf_used_.resize(slot_cnt);
+    buf_pkt_.resize(slot_cnt);
+    buf_in_.resize(slot_cnt);
+    buf_e_.resize(slot_cnt);
     ingress_pool_occ_.resize(in_cnt);
     headroom_pool_occ_.resize(in_cnt);
     egress_lossless_pool_occ_.resize(eg_cnt);
@@ -102,11 +106,17 @@ void SharedBufferPoint::init_shared_vars() {
     char vname[120];
 
     for (unsigned int b = 0; b < slot_cnt; b++) {
-        buf_used_[b].resize(total_time);
+        buf_pkt_[b].resize(total_time);
+        buf_in_[b].resize(total_time);
+        buf_e_[b].resize(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
             for (unsigned int k = 0; k < k_states; k++) {
-                snprintf(vname, sizeof(vname), "sb_buf_used[%u][%u][%u]", b, t, k);
-                buf_used_[b][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_buf_pkt[%u][%u][%u]", b, t, k);
+                buf_pkt_[b][t].push_back(net_ctx.pkt_const(vname));
+                snprintf(vname, sizeof(vname), "sb_buf_in[%u][%u][%u]", b, t, k);
+                buf_in_[b][t].push_back(net_ctx.int_const(vname));
+                snprintf(vname, sizeof(vname), "sb_buf_e[%u][%u][%u]", b, t, k);
+                buf_e_[b][t].push_back(net_ctx.int_const(vname));
             }
         }
     }
@@ -408,7 +418,9 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                              k);
                     // Writes can only target currently empty slots.
                     new_constr_map.insert(
-                        named_constr(constr_name, implies(write_slot_[q][b][t][k], !buf_used_[b][t][k])));
+                        named_constr(constr_name,
+                                     implies(write_slot_[q][b][t][k],
+                                             !net_ctx.pkt2val(buf_pkt_[b][t][k]))));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -450,6 +462,45 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 snprintf(constr_name, sizeof(constr_name), "sb_no_rw_conflict_b%u_t%u_k%u", b, t, k);
                 // Read and write on the same slot cannot happen simultaneously in one micro-step.
                 new_constr_map.insert(named_constr(constr_name, slot_writers_sum + slot_readers_sum <= 1));
+            }
+        }
+    }
+
+    // Slot identity consistency for each state snapshot [t][k].
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int k = 0; k < k_states; k++) {
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                expr used = net_ctx.pkt2val(buf_pkt_[b][t][k]);
+
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_empty_pkt_null_b%u_t%u_k%u", b, t, k);
+                // Empty slots carry null packet identity.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(!used, buf_pkt_[b][t][k] == net_ctx.null_pkt())));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_empty_ing_neg1_b%u_t%u_k%u", b, t, k);
+                // Empty slots reset ingress owner metadata to -1 (no owner).
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(!used, buf_in_[b][t][k] == -1)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_empty_eg_neg1_b%u_t%u_k%u", b, t, k);
+                // Empty slots reset egress owner metadata to -1 (no owner).
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(!used, buf_e_[b][t][k] == -1)));
+
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_occ_ing_lb_b%u_t%u_k%u", b, t, k);
+                // Occupied slots must carry a valid ingress owner index.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(used, buf_in_[b][t][k] >= 0)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_occ_ing_ub_b%u_t%u_k%u", b, t, k);
+                // Occupied slots must carry a valid ingress owner index.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(used, buf_in_[b][t][k] < (int) in_cnt)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_occ_eg_lb_b%u_t%u_k%u", b, t, k);
+                // Occupied slots must carry a valid egress owner index.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(used, buf_e_[b][t][k] >= 0)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_occ_eg_ub_b%u_t%u_k%u", b, t, k);
+                // Occupied slots must carry a valid egress owner index.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(used, buf_e_[b][t][k] < (int) eg_cnt)));
             }
         }
     }
@@ -599,11 +650,73 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     any_read = any_read || read_slot_[e][b][t][k];
                 }
 
-                snprintf(constr_name, sizeof(constr_name), "sb_buf_step_b%u_t%u_k%u", b, t, k);
-                // Slot occupancy transition: read clears, write sets, otherwise state carries over.
+                for (unsigned int q = 0; q < in_cnt; q++) {
+                    expr pkt = in_queues[q]->enqs(0)[t];
+                    expr dst_eg = net_ctx.pkt2meta1(pkt) % net_ctx.int_val((int) eg_cnt);
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_buf_pkt_write_bind_q%u_b%u_t%u_k%u",
+                             q,
+                             b,
+                             t,
+                             k);
+                    // Writing queue q to slot b copies packet identity into the next micro-state.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(write_slot_[q][b][t][k], buf_pkt_[b][t][k + 1] == pkt)));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_buf_in_write_bind_q%u_b%u_t%u_k%u",
+                             q,
+                             b,
+                             t,
+                             k);
+                    // Writing queue q to slot b records ingress owner index q.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(write_slot_[q][b][t][k], buf_in_[b][t][k + 1] == (int) q)));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_buf_e_write_bind_q%u_b%u_t%u_k%u",
+                             q,
+                             b,
+                             t,
+                             k);
+                    // Writing queue q to slot b records routed egress owner index.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(write_slot_[q][b][t][k], buf_e_[b][t][k + 1] == dst_eg)));
+                }
+
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_pkt_read_clear_b%u_t%u_k%u", b, t, k);
+                // Any read clears slot packet identity in the next micro-state.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(any_read, buf_pkt_[b][t][k + 1] == net_ctx.null_pkt())));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_in_read_clear_b%u_t%u_k%u", b, t, k);
+                // Any read clears ingress owner metadata to -1 in the next micro-state.
+                new_constr_map.insert(named_constr(constr_name, implies(any_read, buf_in_[b][t][k + 1] == -1)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_e_read_clear_b%u_t%u_k%u", b, t, k);
+                // Any read clears egress owner metadata to -1 in the next micro-state.
+                new_constr_map.insert(named_constr(constr_name, implies(any_read, buf_e_[b][t][k + 1] == -1)));
+
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_pkt_keep_b%u_t%u_k%u", b, t, k);
+                // Without read/write action, packet identity carries over to the next micro-state.
                 new_constr_map.insert(named_constr(
                     constr_name,
-                    buf_used_[b][t][k + 1] == ((buf_used_[b][t][k] && !any_read) || any_write)));
+                    implies(!any_write && !any_read, buf_pkt_[b][t][k + 1] == buf_pkt_[b][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_in_keep_b%u_t%u_k%u", b, t, k);
+                // Without read/write action, ingress owner metadata carries over.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    implies(!any_write && !any_read, buf_in_[b][t][k + 1] == buf_in_[b][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_e_keep_b%u_t%u_k%u", b, t, k);
+                // Without read/write action, egress owner metadata carries over.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    implies(!any_write && !any_read, buf_e_[b][t][k + 1] == buf_e_[b][t][k])));
             }
         }
     }
@@ -665,9 +778,15 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
         new_constr_map.insert(named_constr(constr_name, egress_lossless_pool_occ_[e][0][0] == 0));
     }
     for (unsigned int b = 0; b < slot_cnt; b++) {
-        snprintf(constr_name, sizeof(constr_name), "sb_buf_init_empty_b%u", b);
-        // Initial slot occupancy is empty.
-        new_constr_map.insert(named_constr(constr_name, !buf_used_[b][0][0]));
+        snprintf(constr_name, sizeof(constr_name), "sb_buf_pkt_init_null_b%u", b);
+        // Initial slot packet identity is null.
+        new_constr_map.insert(named_constr(constr_name, buf_pkt_[b][0][0] == net_ctx.null_pkt()));
+        snprintf(constr_name, sizeof(constr_name), "sb_buf_in_init_neg1_b%u", b);
+        // Initial ingress owner metadata is -1 (no owner).
+        new_constr_map.insert(named_constr(constr_name, buf_in_[b][0][0] == -1));
+        snprintf(constr_name, sizeof(constr_name), "sb_buf_e_init_neg1_b%u", b);
+        // Initial egress owner metadata is -1 (no owner).
+        new_constr_map.insert(named_constr(constr_name, buf_e_[b][0][0] == -1));
     }
 
     // Cross-slot state handoff: [t][last_k] -> [t+1][0].
@@ -695,11 +814,21 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
         }
 
         for (unsigned int b = 0; b < slot_cnt; b++) {
-            snprintf(constr_name, sizeof(constr_name), "sb_buf_handoff_b%u_t%u", b, t);
-            // End-of-slot slot occupancy becomes next slot's initial slot occupancy.
+            snprintf(constr_name, sizeof(constr_name), "sb_buf_pkt_handoff_b%u_t%u", b, t);
+            // End-of-slot slot packet identity becomes next slot's initial packet identity.
             new_constr_map.insert(named_constr(
                 constr_name,
-                buf_used_[b][t + 1][0] == buf_used_[b][t][micro_steps]));
+                buf_pkt_[b][t + 1][0] == buf_pkt_[b][t][micro_steps]));
+            snprintf(constr_name, sizeof(constr_name), "sb_buf_in_handoff_b%u_t%u", b, t);
+            // End-of-slot ingress owner metadata becomes next slot's initial ingress owner metadata.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                buf_in_[b][t + 1][0] == buf_in_[b][t][micro_steps]));
+            snprintf(constr_name, sizeof(constr_name), "sb_buf_e_handoff_b%u_t%u", b, t);
+            // End-of-slot egress owner metadata becomes next slot's initial egress owner metadata.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                buf_e_[b][t + 1][0] == buf_e_[b][t][micro_steps]));
         }
 
         snprintf(constr_name, sizeof(constr_name), "sb_ing_used_handoff_t%u", t);
@@ -763,7 +892,9 @@ void SharedBufferPoint::add_out_queue_constrs() {
                          deq_k);
                 // A read action can only target a slot that is currently occupied.
                 new_constr_map.insert(
-                    named_constr(constr_name, implies(read_slot_[e][b][t][deq_k], buf_used_[b][t][deq_k])));
+                    named_constr(constr_name,
+                                 implies(read_slot_[e][b][t][deq_k],
+                                         net_ctx.pkt2val(buf_pkt_[b][t][deq_k]))));
                 reads_this_e_t_sum = reads_this_e_t_sum + b2i(read_slot_[e][b][t][deq_k]);
             }
 
