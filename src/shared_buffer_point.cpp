@@ -59,7 +59,7 @@ void SharedBufferPoint::init_shared_vars() {
     admit_e_.clear();
     admit_.clear();
     // drop_or_block_.clear();
-    alloc_ing_.clear();
+    alloc_in_.clear();
     release_in_.clear();
     alloc_hdr_.clear();
     release_hdr_.clear();
@@ -83,7 +83,7 @@ void SharedBufferPoint::init_shared_vars() {
     admit_e_.resize(eg_cnt);
     admit_.resize(in_cnt);
     // drop_or_block_.resize(in_cnt);
-    alloc_ing_.resize(in_cnt);
+    alloc_in_.resize(in_cnt);
     release_in_.resize(in_cnt);
     alloc_hdr_.resize(in_cnt);
     release_hdr_.resize(in_cnt);
@@ -126,7 +126,7 @@ void SharedBufferPoint::init_shared_vars() {
         admit_in_[q].resize(total_time);
         admit_[q].resize(total_time);
         // drop_or_block_[q].resize(total_time);
-        alloc_ing_[q].resize(total_time);
+        alloc_in_[q].resize(total_time);
         release_in_[q].resize(total_time);
         alloc_hdr_[q].resize(total_time);
         release_hdr_[q].resize(total_time);
@@ -141,8 +141,8 @@ void SharedBufferPoint::init_shared_vars() {
                 admit_[q][t].push_back(net_ctx.bool_const(vname));
                 // snprintf(vname, sizeof(vname), "sb_drop_or_block[%u][%u][%u]", q, t, k);
                 // drop_or_block_[q][t].push_back(net_ctx.bool_const(vname));
-                snprintf(vname, sizeof(vname), "sb_alloc_ing[%u][%u][%u]", q, t, k);
-                alloc_ing_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "sb_alloc_in[%u][%u][%u]", q, t, k);
+                alloc_in_[q][t].push_back(net_ctx.bool_const(vname));
                 snprintf(vname, sizeof(vname), "sb_release_in[%u][%u][%u]", q, t, k);
                 release_in_[q][t].push_back(net_ctx.bool_const(vname));
                 snprintf(vname, sizeof(vname), "sb_alloc_hdr[%u][%u][%u]", q, t, k);
@@ -251,9 +251,9 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     snprintf(constr_name, sizeof(constr_name), "sb_inactive_admit_q%u_t%u_k%u", q, t, k);
                     // Inactive ingress queue cannot be admitted at this micro-step.
                     new_constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
-                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_ing_q%u_t%u_k%u", q, t, k);
+                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_in_q%u_t%u_k%u", q, t, k);
                     // Inactive ingress queue cannot allocate ingress pool at this micro-step.
-                    new_constr_map.insert(named_constr(constr_name, !alloc_ing_[q][t][k]));
+                    new_constr_map.insert(named_constr(constr_name, !alloc_in_[q][t][k]));
                     snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_hdr_q%u_t%u_k%u", q, t, k);
                     // Inactive ingress queue cannot allocate headroom pool at this micro-step.
                     new_constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
@@ -265,9 +265,11 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     new_constr_map.insert(named_constr(constr_name, !release_in_[q][t][k]));
                 }
 
-                snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_disabled_q%u_t%u_k%u", q, t, k);
-                // Headroom release is disabled in the current model revision.
-                new_constr_map.insert(named_constr(constr_name, !release_hdr_[q][t][k]));
+                if (!is_deq_step) {
+                    snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_non_deq_q%u_t%u_k%u", q, t, k);
+                    // Headroom release is only allowed at the dedicated deq micro-step.
+                    new_constr_map.insert(named_constr(constr_name, !release_hdr_[q][t][k]));
+                }
 
                 for (unsigned int b = 0; b < slot_cnt; b++) {
                     if (is_deq_step || (int) q != active_q) {
@@ -346,12 +348,35 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 // Admission result follows the routed egress gate selected by packet destination.
                 new_constr_map.insert(named_constr(constr_name, mk_and(route_cases)));
 
-                snprintf(constr_name, sizeof(constr_name), "sb_alloc_ing_def_q%u_t%u_k%u", q, t, k);
-                // Ingress allocation tracks successful admission one-to-one.
-                new_constr_map.insert(named_constr(constr_name, alloc_ing_[q][t][k] == admit_[q][t][k]));
-                snprintf(constr_name, sizeof(constr_name), "sb_alloc_hdr_zero_q%u_t%u_k%u", q, t, k);
-                // Headroom allocation path is disabled in this model version.
-                new_constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
+                // TODO(shared-buffer): Parameterize per-queue alpha and use
+                // gamma_q = alpha_q * remaining_ingress_pool.
+                // Current model fixes alpha = 1.
+                expr gamma_q = net_ctx.int_val((int) ingress_pool_cap_cnt) - ingress_pool_total_occ_[t][k];
+                expr queue_paused =
+                    (headroom_pool_occ_[q][t][k] > 0) || (ingress_pool_occ_[q][t][k] >= gamma_q);
+
+                snprintf(constr_name, sizeof(constr_name), "sb_alloc_in_by_threshold_q%u_t%u_k%u", q, t, k);
+                // If queue q is not paused at this step, admitted packets are accounted in ingress pool.
+                new_constr_map.insert(
+                    named_constr(constr_name, alloc_in_[q][t][k] == (admit_[q][t][k] && !queue_paused)));
+                snprintf(constr_name, sizeof(constr_name), "sb_alloc_hdr_by_paused_q%u_t%u_k%u", q, t, k);
+                // If queue q is paused at this step, admitted packets are accounted in headroom pool.
+                new_constr_map.insert(
+                    named_constr(constr_name, alloc_hdr_[q][t][k] == (admit_[q][t][k] && queue_paused)));
+                snprintf(constr_name, sizeof(constr_name), "sb_alloc_in_requires_pool_credit_q%u_t%u_k%u", q, t, k);
+                // Ingress accounting requires available ingress-pool capacity.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    implies(alloc_in_[q][t][k], ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt)));
+                snprintf(constr_name, sizeof(constr_name), "sb_alloc_hdr_requires_pool_credit_q%u_t%u_k%u", q, t, k);
+                // Headroom accounting requires available per-queue headroom capacity.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    implies(alloc_hdr_[q][t][k], headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt)));
+                snprintf(constr_name, sizeof(constr_name), "sb_alloc_cover_admit_q%u_t%u_k%u", q, t, k);
+                // Every admitted packet must be accounted by exactly one allocation path.
+                new_constr_map.insert(
+                    named_constr(constr_name, admit_[q][t][k] == (alloc_in_[q][t][k] || alloc_hdr_[q][t][k])));
 
                 // Empty enq guards
                 snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_admit_in_q%u_t%u_k%u", q, t, k);
@@ -360,9 +385,9 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_admit_q%u_t%u_k%u", q, t, k);
                 // Empty input packet means no final admission.
                 new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !admit_[q][t][k])));
-                snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_alloc_ing_q%u_t%u_k%u", q, t, k);
+                snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_alloc_in_q%u_t%u_k%u", q, t, k);
                 // Empty input packet cannot allocate ingress pool.
-                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !alloc_ing_[q][t][k])));
+                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !alloc_in_[q][t][k])));
                 snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_alloc_hdr_q%u_t%u_k%u", q, t, k);
                 // Empty input packet cannot allocate headroom pool.
                 new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !alloc_hdr_[q][t][k])));
@@ -542,6 +567,16 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     new_constr_map.insert(named_constr(
                         constr_name,
                         implies(release_in_[q][t][k], ingress_pool_occ_[q][t][k] > 0)));
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_release_hdr_requires_credit_q%u_t%u_k%u",
+                             q,
+                             t,
+                             k);
+                    // Headroom release requires available headroom credit.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(release_hdr_[q][t][k], headroom_pool_occ_[q][t][k] > 0)));
                 }
             }
 
@@ -617,7 +652,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 new_constr_map.insert(named_constr(
                     constr_name,
                     ingress_pool_occ_[q][t][k + 1] ==
-                        ingress_pool_occ_[q][t][k] + b2i(alloc_ing_[q][t][k]) -
+                        ingress_pool_occ_[q][t][k] + b2i(alloc_in_[q][t][k]) -
                             b2i(release_in_[q][t][k])));
 
                 snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_step_q%u_t%u_k%u", q, t, k);
@@ -732,7 +767,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
 
         expr release_in_sum = int0;
         expr release_hdr_sum = int0;
-        expr release_eg_sum = int0;
+        expr release_e_sum = int0;
         for (unsigned int q = 0; q < in_cnt; q++) {
             expr reads_from_q_sum = int0;
             for (unsigned int e = 0; e < eg_cnt; e++) {
@@ -742,28 +777,31 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                                            buf_in_[b][t][deq_k] == (int) q);
                 }
             }
-            snprintf(constr_name, sizeof(constr_name), "sb_release_in_from_reads_q%u_t%u_k%u", q, t, deq_k);
-            // Ingress release for queue q must exactly match reads sourced from queue q.
+            expr has_read_from_q = reads_from_q_sum == int1;
+            snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_from_reads_q%u_t%u_k%u", q, t, deq_k);
+            // On dequeue, queue q releases headroom first when a read occurs and headroom is non-empty.
             new_constr_map.insert(named_constr(
                 constr_name,
-                b2i(release_in_[q][t][deq_k]) == reads_from_q_sum));  
+                release_hdr_[q][t][deq_k] == (has_read_from_q && headroom_pool_occ_[q][t][deq_k] > 0)));
+            snprintf(constr_name, sizeof(constr_name), "sb_release_in_from_reads_q%u_t%u_k%u", q, t, deq_k);
+            // On dequeue, queue q releases ingress only when a read occurs and headroom is already empty.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                release_in_[q][t][deq_k] == (has_read_from_q && headroom_pool_occ_[q][t][deq_k] == 0)));
 
             release_in_sum = release_in_sum + b2i(release_in_[q][t][deq_k]);
             release_hdr_sum = release_hdr_sum + b2i(release_hdr_[q][t][deq_k]);
         }
         for (unsigned int e = 0; e < eg_cnt; e++) {
-            release_eg_sum = release_eg_sum + b2i(release_e_[e][t][deq_k]);
+            release_e_sum = release_e_sum + b2i(release_e_[e][t][deq_k]);
         }
 
-        snprintf(constr_name, sizeof(constr_name), "sb_release_in_match_read_t%u_k%u", t, deq_k);
-        // Total ingress releases must match total reads in the deq micro-step.
-        new_constr_map.insert(named_constr(constr_name, release_in_sum == read_sum));
+        snprintf(constr_name, sizeof(constr_name), "sb_release_in_hdr_match_read_t%u_k%u", t, deq_k);
+        // Total (ingress + headroom) releases must match total reads in the deq micro-step.
+        new_constr_map.insert(named_constr(constr_name, release_in_sum + release_hdr_sum == read_sum));
         snprintf(constr_name, sizeof(constr_name), "sb_release_e_match_read_t%u_k%u", t, deq_k);
         // Total egress releases must match total reads in the deq micro-step.
-        new_constr_map.insert(named_constr(constr_name, release_eg_sum == read_sum));
-        snprintf(constr_name, sizeof(constr_name), "sb_release_hdr_zero_t%u_k%u", t, deq_k);
-        // Headroom release is disabled, so release sum is always zero.
-        new_constr_map.insert(named_constr(constr_name, release_hdr_sum == 0));
+        new_constr_map.insert(named_constr(constr_name, release_e_sum == read_sum));
     }
 }
 

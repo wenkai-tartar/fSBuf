@@ -56,7 +56,7 @@ protected:
     vector<vector<vector<expr>>> admit_e_; // [e][t][k] bool
     vector<vector<vector<expr>>> admit_; // [q][t][k] bool
     // vector<vector<vector<expr>>> drop_or_block_; // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_ing_; // [q][t][k] bool
+    vector<vector<vector<expr>>> alloc_in_; // [q][t][k] bool
     vector<vector<vector<expr>>> release_in_; // [q][t][k] bool
     vector<vector<vector<expr>>> alloc_hdr_; // [q][t][k] bool
     vector<vector<vector<expr>>> release_hdr_; // [q][t][k] bool
