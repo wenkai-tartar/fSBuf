@@ -337,6 +337,35 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 expr dst = net_ctx.pkt2meta1(pkt);
                 expr dst_eg = dst % net_ctx.int_val((int) eg_cnt);
 
+                Metric* demand_metric = inq->get_metric(metric_t::DEMAND);
+                if (demand_metric != nullptr) {
+                    expr demand_t = demand_metric->val(t).second;
+                    if (t > 0) {
+                        demand_t = demand_t - demand_metric->val(t - 1).second;
+                    }
+                    expr has_demand = demand_t > 0;
+
+                    unsigned int demand_ub = sb_info.max_demand_per_t;
+                    if (inq->max_enq() < demand_ub) demand_ub = inq->max_enq();
+
+                    snprintf(constr_name, sizeof(constr_name), "sb_demand_lb_q%u_t%u_k%u", q, t, k);
+                    // Per-slot demand must be non-negative.
+                    new_constr_map.insert(named_constr(constr_name, demand_t >= 0));
+                    snprintf(constr_name, sizeof(constr_name), "sb_demand_ub_q%u_t%u_k%u", q, t, k);
+                    // Per-slot demand is capped by configured max_demand_per_t and queue max_enq.
+                    new_constr_map.insert(
+                        named_constr(constr_name, demand_t <= (int) demand_ub));
+
+                    snprintf(constr_name, sizeof(constr_name), "sb_has_enq_from_demand_q%u_t%u_k%u", q, t, k);
+                    // Actual packet arrival requires both intent and successful admission.
+                    new_constr_map.insert(
+                        named_constr(constr_name, has_enq == (has_demand && admit_[q][t][k])));
+                    snprintf(constr_name, sizeof(constr_name), "sb_admit_in_from_demand_q%u_t%u_k%u", q, t, k);
+                    // Ingress-side request follows intent; egress/paused logic decides final admit.
+                    new_constr_map.insert(
+                        named_constr(constr_name, admit_in_[q][t][k] == has_demand));
+                }
+
                 expr_vector route_cases(net_ctx.z3_ctx());
                 for (unsigned int e = 0; e < eg_cnt; e++) {
                     expr route_to_e = dst_eg == net_ctx.int_val((int) e);
@@ -380,9 +409,6 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     named_constr(constr_name, admit_[q][t][k] == (alloc_in_[q][t][k] || alloc_hdr_[q][t][k])));
 
                 // Empty enq guards
-                snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_admit_in_q%u_t%u_k%u", q, t, k);
-                // Empty input packet means no ingress-side admission request.
-                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !admit_in_[q][t][k])));
                 snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_admit_q%u_t%u_k%u", q, t, k);
                 // Empty input packet means no final admission.
                 new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !admit_[q][t][k])));
@@ -1013,5 +1039,9 @@ void SharedBufferPoint::add_out_queue_constrs() {
 }
 
 m_val_expr_t SharedBufferPoint::metric_val_expr(metric_t metric, unsigned int q, unsigned t) {
+    if (metric == metric_t::CENQ) {
+        Metric* demand_metric = in_queues[q]->get_metric(metric_t::DEMAND);
+        if (demand_metric != nullptr) return demand_metric->val(t);
+    }
     return ContentionPoint::metric_val_expr(metric, q, t);
 }
