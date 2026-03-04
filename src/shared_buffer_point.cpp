@@ -1039,9 +1039,5 @@ void SharedBufferPoint::add_out_queue_constrs() {
 }
 
 m_val_expr_t SharedBufferPoint::metric_val_expr(metric_t metric, unsigned int q, unsigned t) {
-    if (metric == metric_t::CENQ) {
-        Metric* demand_metric = in_queues[q]->get_metric(metric_t::DEMAND);
-        if (demand_metric != nullptr) return demand_metric->val(t);
-    }
     return ContentionPoint::metric_val_expr(metric, q, t);
 }
