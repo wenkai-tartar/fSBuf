@@ -7,7 +7,7 @@
 
 #include "sonic_switch.hpp"
 
-#include "shared_buffer_stub_qm.hpp"
+#include "shared_buffer_seq_qm.hpp"
 
 #include <sstream>
 
@@ -37,7 +37,7 @@ void SONiCSwitch::add_nodes() {
     out_info.type = queue_t::SB_EGRESS;
 
     cid_t m_id = "SB_CORE";
-    SharedBufferStubQM* sb_qm = new SharedBufferStubQM(
+    SharedBufferSeqQM* sb_qm = new SharedBufferSeqQM(
         m_id,
         total_time,
         vector<QueueInfo>(ingress_queue_cnt_, in_info),
