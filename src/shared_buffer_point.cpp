@@ -6,6 +6,7 @@
 //
 
 #include "shared_buffer_point.hpp"
+#include "shared_buffer_seq_qm.hpp"
 
 #include <cstdio>
 
@@ -270,28 +271,69 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
     auto b2i = [&](const expr& b) { return ite(b, int1, int0); };
 
     char constr_name[160];
+    SharedBufferSeqQM* sched_qm = nullptr;
+    for (map<cid_t, QueuingModule*>::iterator it = id_to_qm.begin(); it != id_to_qm.end(); ++it) {
+        SharedBufferSeqQM* cand = dynamic_cast<SharedBufferSeqQM*>(it->second);
+        if (cand != nullptr) {
+            sched_qm = cand;
+            break;
+        }
+    }
+    auto ingress_step_for_k = [&](unsigned int k) -> int {
+        if (k == deq_k) return -1;
+        if (sb_info.timing_mode == SharedBufferPointInfo::TimingMode::DEQ_FIRST) {
+            if (k == 0) return -1;
+            return (int) (k - 1);
+        }
+        if (k >= in_cnt) return -1;
+        return (int) k;
+    };
+    auto q_is_active = [&](unsigned int q, unsigned int t, unsigned int k) -> expr {
+        int ingress_k = ingress_step_for_k(k);
+        if (ingress_k < 0) return net_ctx.bool_val(false);
+        if (sched_qm != nullptr &&
+            q < sched_qm->in_queue_cnt() &&
+            (unsigned int) ingress_k < sched_qm->ingress_step_cnt()) {
+            return sched_qm->ingress_active(q, t, (unsigned int) ingress_k);
+        }
+        return net_ctx.bool_val((unsigned int) ingress_k == q);
+    };
 
     // Enforce micro-step role semantics: each k is either one ingress action or one global deq step.
     for (unsigned int t = 0; t < total_time; t++) {
         for (unsigned int k = 0; k < micro_steps; k++) {
-            const int active_q = ingress_queue_for_step(k);
             const bool is_deq_step = (k == deq_k);
+            const bool is_first_ingress_step = (ingress_step_for_k(k) == 0);
+            expr active_sum = int0;
 
             for (unsigned int q = 0; q < in_cnt; q++) {
-                if ((int) q != active_q) {
-                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_admit_in_q%u_t%u_k%u", q, t, k);
-                    // Inactive ingress queue cannot request admission at this micro-step.
-                    new_constr_map.insert(named_constr(constr_name, !admit_in_[q][t][k]));
-                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_admit_q%u_t%u_k%u", q, t, k);
-                    // Inactive ingress queue cannot be admitted at this micro-step.
-                    new_constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
-                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_in_q%u_t%u_k%u", q, t, k);
-                    // Inactive ingress queue cannot allocate ingress pool at this micro-step.
-                    new_constr_map.insert(named_constr(constr_name, !alloc_in_[q][t][k]));
-                    snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_hdr_q%u_t%u_k%u", q, t, k);
-                    // Inactive ingress queue cannot allocate headroom pool at this micro-step.
-                    new_constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
-                }
+                active_sum = active_sum + b2i(q_is_active(q, t, k));
+            }
+
+            if (is_deq_step) {
+                snprintf(constr_name, sizeof(constr_name), "sb_active_none_at_deq_t%u_k%u", t, k);
+                // Dequeue micro-step has no active ingress queue.
+                new_constr_map.insert(named_constr(constr_name, active_sum == int0));
+            } else {
+                snprintf(constr_name, sizeof(constr_name), "sb_active_onehot_t%u_k%u", t, k);
+                // In each ingress micro-step, exactly one ingress queue is active.
+                new_constr_map.insert(named_constr(constr_name, active_sum == int1));
+            }
+
+            for (unsigned int q = 0; q < in_cnt; q++) {
+                expr q_active = q_is_active(q, t, k);
+                snprintf(constr_name, sizeof(constr_name), "sb_inactive_admit_in_q%u_t%u_k%u", q, t, k);
+                // Inactive ingress queue cannot request admission at this micro-step.
+                new_constr_map.insert(named_constr(constr_name, implies(!q_active, !admit_in_[q][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_inactive_admit_q%u_t%u_k%u", q, t, k);
+                // Inactive ingress queue cannot be admitted at this micro-step.
+                new_constr_map.insert(named_constr(constr_name, implies(!q_active, !admit_[q][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_in_q%u_t%u_k%u", q, t, k);
+                // Inactive ingress queue cannot allocate ingress pool at this micro-step.
+                new_constr_map.insert(named_constr(constr_name, implies(!q_active, !alloc_in_[q][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_inactive_alloc_hdr_q%u_t%u_k%u", q, t, k);
+                // Inactive ingress queue cannot allocate headroom pool at this micro-step.
+                new_constr_map.insert(named_constr(constr_name, implies(!q_active, !alloc_hdr_[q][t][k])));
 
                 if (!is_deq_step) {
                     snprintf(constr_name, sizeof(constr_name), "sb_release_in_non_deq_q%u_t%u_k%u", q, t, k);
@@ -306,7 +348,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 }
 
                 for (unsigned int b = 0; b < slot_cnt; b++) {
-                    if (is_deq_step || (int) q != active_q) {
+                    if (is_deq_step) {
                         snprintf(constr_name,
                                  sizeof(constr_name),
                                  "sb_write_inactive_q%u_b%u_t%u_k%u",
@@ -316,6 +358,18 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                                  k);
                         // Only the active ingress queue in an ingress micro-step may write a slot.
                         new_constr_map.insert(named_constr(constr_name, !write_slot_[q][b][t][k]));
+                    } else {
+                        snprintf(constr_name,
+                                 sizeof(constr_name),
+                                 "sb_write_requires_active_q%u_b%u_t%u_k%u",
+                                 q,
+                                 b,
+                                 t,
+                                 k);
+                        // In ingress micro-steps, writes are only allowed for the active queue.
+                        new_constr_map.insert(named_constr(
+                            constr_name,
+                            implies(!q_active, !write_slot_[q][b][t][k])));
                     }
                 }
             }
@@ -357,13 +411,14 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 }
             }
 
-            if (active_q >= 0) {
-                const unsigned int q = (unsigned int) active_q;
-                Queue* inq = in_queues[q];
-                expr pkt = inq->enqs(0)[t];
-                expr has_enq = net_ctx.pkt2val(pkt);
-                expr dst = net_ctx.pkt2meta1(pkt);
-                expr dst_eg = dst % net_ctx.int_val((int) eg_cnt);
+            if (!is_deq_step) {
+                for (unsigned int q = 0; q < in_cnt; q++) {
+                    expr q_active = q_is_active(q, t, k);
+                    Queue* inq = in_queues[q];
+                    expr pkt = inq->enqs(0)[t];
+                    expr has_enq = net_ctx.pkt2val(pkt);
+                    expr dst = net_ctx.pkt2meta1(pkt);
+                    expr dst_eg = dst % net_ctx.int_val((int) eg_cnt);
 
                 Metric* demand_metric = inq->get_metric(metric_t::DEMAND);
                 if (demand_metric != nullptr) {
@@ -376,13 +431,16 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     unsigned int demand_ub = sb_info.max_demand_per_t;
                     if (inq->max_enq() < demand_ub) demand_ub = inq->max_enq();
 
-                    snprintf(constr_name, sizeof(constr_name), "sb_demand_lb_q%u_t%u_k%u", q, t, k);
-                    // Per-slot demand must be non-negative.
-                    new_constr_map.insert(named_constr(constr_name, demand_t >= 0));
-                    snprintf(constr_name, sizeof(constr_name), "sb_demand_ub_q%u_t%u_k%u", q, t, k);
-                    // Per-slot demand is capped by configured max_demand_per_t and queue max_enq.
-                    new_constr_map.insert(
-                        named_constr(constr_name, demand_t <= (int) demand_ub));
+                    if (is_first_ingress_step) {
+                        snprintf(constr_name, sizeof(constr_name), "sb_demand_lb_q%u_t%u", q, t);
+                        // Per-slot demand must be non-negative (unconditional per (q,t)).
+                        new_constr_map.insert(named_constr(constr_name, demand_t >= 0));
+                        snprintf(constr_name, sizeof(constr_name), "sb_demand_ub_q%u_t%u", q, t);
+                        // Per-slot demand is capped by configured max_demand_per_t and queue max_enq
+                        // (unconditional per (q,t)).
+                        new_constr_map.insert(
+                            named_constr(constr_name, demand_t <= (int) demand_ub));
+                    }
 
                     unsigned int ser_factor = ingress_serialization_factor(q);
                     for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
@@ -399,46 +457,58 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                         // next S_q-1 slots.
                         new_constr_map.insert(named_constr(
                             constr_name,
-                            implies(demand_t > 0, demand_next == 0)));
+                            implies(q_active && demand_t > 0, demand_next == 0)));
                     }
 
                     snprintf(constr_name, sizeof(constr_name), "sb_has_enq_from_demand_q%u_t%u_k%u", q, t, k);
                     // Actual packet arrival requires both intent and successful admission.
                     new_constr_map.insert(
-                        named_constr(constr_name, has_enq == (has_demand && admit_[q][t][k])));
+                        named_constr(constr_name, implies(q_active, has_enq == (has_demand && admit_[q][t][k]))));
                     snprintf(constr_name, sizeof(constr_name), "sb_admit_in_from_demand_q%u_t%u_k%u", q, t, k);
                     // Ingress-side request follows intent; egress/paused logic decides final admit.
                     new_constr_map.insert(
-                        named_constr(constr_name, admit_in_[q][t][k] == has_demand));
+                        named_constr(constr_name, implies(q_active, admit_in_[q][t][k] == has_demand)));
                 }
 
                 expr_vector route_cases(net_ctx.z3_ctx());
+                expr any_admit_e = bool0;
                 for (unsigned int e = 0; e < eg_cnt; e++) {
                     expr route_to_e = dst_eg == net_ctx.int_val((int) e);
                     expr admit_def = admit_[q][t][k] == (admit_in_[q][t][k] && admit_e_[e][t][k]);
-                    route_cases.push_back(implies(has_enq && route_to_e, admit_def));
+                    route_cases.push_back(implies(q_active && has_enq && route_to_e, admit_def));
+                    any_admit_e = any_admit_e || admit_e_[e][t][k];
 
                     snprintf(constr_name, sizeof(constr_name), "sb_admit_e_non_route_false_q%u_e%u_t%u_k%u", q, e, t, k);
                     // In an ingress micro-step, egress gate e is forced false when the packet is empty
                     // or when e is not the routed destination for this packet.
                     new_constr_map.insert(named_constr(
                         constr_name,
-                        implies(!has_enq || !route_to_e, !admit_e_[e][t][k])));
+                        implies(q_active && (!has_enq || !route_to_e), !admit_e_[e][t][k])));
                 }
                 snprintf(constr_name, sizeof(constr_name), "sb_admit_route_q%u_t%u_k%u", q, t, k);
                 // Admission result follows the routed egress gate selected by packet destination.
                 new_constr_map.insert(named_constr(constr_name, mk_and(route_cases)));
+                snprintf(constr_name, sizeof(constr_name), "sb_admit_requires_in_and_eg_q%u_t%u_k%u", q, t, k);
+                // Final admit requires both ingress-side request and at least one egress gate.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    implies(q_active,
+                            admit_[q][t][k] == (admit_in_[q][t][k] && any_admit_e))));
 
                 expr queue_paused = paused_[q][t];
 
                 snprintf(constr_name, sizeof(constr_name), "sb_alloc_in_by_threshold_q%u_t%u_k%u", q, t, k);
                 // If queue q is not paused at this step, admitted packets are accounted in ingress pool.
                 new_constr_map.insert(
-                    named_constr(constr_name, alloc_in_[q][t][k] == (admit_[q][t][k] && !queue_paused)));
+                    named_constr(constr_name,
+                                 implies(q_active,
+                                         alloc_in_[q][t][k] == (admit_[q][t][k] && !queue_paused))));
                 snprintf(constr_name, sizeof(constr_name), "sb_alloc_hdr_by_paused_q%u_t%u_k%u", q, t, k);
                 // If queue q is paused at this step, admitted packets are accounted in headroom pool.
                 new_constr_map.insert(
-                    named_constr(constr_name, alloc_hdr_[q][t][k] == (admit_[q][t][k] && queue_paused)));
+                    named_constr(constr_name,
+                                 implies(q_active,
+                                         alloc_hdr_[q][t][k] == (admit_[q][t][k] && queue_paused))));
                 snprintf(constr_name, sizeof(constr_name), "sb_alloc_in_requires_pool_credit_q%u_t%u_k%u", q, t, k);
                 // Ingress accounting requires available ingress-pool capacity.
                 new_constr_map.insert(named_constr(
@@ -452,18 +522,20 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 snprintf(constr_name, sizeof(constr_name), "sb_alloc_cover_admit_q%u_t%u_k%u", q, t, k);
                 // Every admitted packet must be accounted by exactly one allocation path.
                 new_constr_map.insert(
-                    named_constr(constr_name, admit_[q][t][k] == (alloc_in_[q][t][k] || alloc_hdr_[q][t][k])));
+                    named_constr(constr_name,
+                                 implies(q_active,
+                                         admit_[q][t][k] == (alloc_in_[q][t][k] || alloc_hdr_[q][t][k]))));
 
                 // Empty enq guards
                 snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_admit_q%u_t%u_k%u", q, t, k);
                 // Empty input packet means no final admission.
-                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !admit_[q][t][k])));
+                new_constr_map.insert(named_constr(constr_name, implies(q_active && !has_enq, !admit_[q][t][k])));
                 snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_alloc_in_q%u_t%u_k%u", q, t, k);
                 // Empty input packet cannot allocate ingress pool.
-                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !alloc_in_[q][t][k])));
+                new_constr_map.insert(named_constr(constr_name, implies(q_active && !has_enq, !alloc_in_[q][t][k])));
                 snprintf(constr_name, sizeof(constr_name), "sb_noop_on_empty_alloc_hdr_q%u_t%u_k%u", q, t, k);
                 // Empty input packet cannot allocate headroom pool.
-                new_constr_map.insert(named_constr(constr_name, implies(!has_enq, !alloc_hdr_[q][t][k])));
+                new_constr_map.insert(named_constr(constr_name, implies(q_active && !has_enq, !alloc_hdr_[q][t][k])));
 
                 for (unsigned int e = 0; e < eg_cnt; e++) {
                     snprintf(constr_name,
@@ -476,8 +548,9 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     // Egress lossless allocation is charged to the routed egress on successful admit.
                     new_constr_map.insert(named_constr(
                         constr_name,
-                        alloc_eg_lossless_[e][t][k] ==
-                            (admit_[q][t][k] && (dst_eg == net_ctx.int_val((int) e)))));
+                        implies(q_active,
+                                alloc_eg_lossless_[e][t][k] ==
+                                    (admit_[q][t][k] && (dst_eg == net_ctx.int_val((int) e))))));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -489,7 +562,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     // Empty input packet cannot allocate any egress lossless pool.
                     new_constr_map.insert(named_constr(
                         constr_name,
-                        implies(!has_enq, !alloc_eg_lossless_[e][t][k])));
+                        implies(q_active && !has_enq, !alloc_eg_lossless_[e][t][k])));
                 }
 
                 expr writes_sum = int0;
@@ -532,18 +605,19 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     // Empty input packet cannot write to any slot.
                     new_constr_map.insert(named_constr(
                         constr_name,
-                        implies(!has_enq, !write_slot_[q][b][t][k])));
+                        implies(q_active && !has_enq, !write_slot_[q][b][t][k])));
                 }
 
                 snprintf(constr_name, sizeof(constr_name), "sb_admit_write_eq_q%u_t%u_k%u", q, t, k);
                 // Exactly one slot is written iff admission succeeds; otherwise no slot is written.
                 new_constr_map.insert(named_constr(
                     constr_name,
-                    writes_sum == ite(admit_[q][t][k], int1, int0)));
+                    implies(q_active, writes_sum == ite(admit_[q][t][k], int1, int0))));
                 snprintf(constr_name, sizeof(constr_name), "sb_admit_requires_empty_q%u_t%u_k%u", q, t, k);
                 // Admission is only possible when at least one shared-buffer slot is currently empty.
                 new_constr_map.insert(
-                    named_constr(constr_name, implies(admit_[q][t][k], any_empty)));
+                    named_constr(constr_name, implies(q_active && admit_[q][t][k], any_empty)));
+                }
             }
 
             for (unsigned int b = 0; b < slot_cnt; b++) {
