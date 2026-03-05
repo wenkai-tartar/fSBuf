@@ -66,12 +66,9 @@ protected:
     vector<vector<vector<expr>>> admit_e_;  // [e][t][k] bool
     vector<vector<vector<expr>>> admit_;    // [q][t][k] bool
     // vector<vector<vector<expr>>> drop_or_block_; // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_in_;           // [q][t][k] bool
-    vector<vector<vector<expr>>> release_in_;         // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_hdr_;          // [q][t][k] bool
-    vector<vector<vector<expr>>> release_hdr_;        // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_eg_lossless_;  // [e][t][k] bool
-    vector<vector<vector<expr>>> release_e_;          // [e][t][k] bool
+    vector<vector<vector<expr>>> alloc_in_;          // [q][t][k] bool
+    vector<vector<vector<expr>>> alloc_hdr_;         // [q][t][k] bool
+    vector<vector<vector<expr>>> alloc_eg_lossless_; // [e][t][k] bool
     vector<vector<vector<vector<expr>>>> write_slot_; // [q][b][t][k] bool
     vector<vector<vector<vector<expr>>>> read_slot_;  // [e][b][t][k] bool
     vector<vector<expr>> min_stamp_e_; // [e][t] int, HOL timestamp for egress e at deq step
