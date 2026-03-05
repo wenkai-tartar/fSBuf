@@ -19,6 +19,14 @@ struct SharedBufferPointInfo {
     };
 
     unsigned int max_demand_per_t = 1;
+    // Per-ingress serialization factor S_q (in fastest-timeslot units).
+    // S_q = 1 means can inject every slot; S_q = 2 means at most once every 2 slots, etc.
+    // If empty or out-of-range for queue q, default to 1.
+    vector<unsigned int> ingress_ser_factor;
+    // Per-egress serialization factor S_e (in fastest-timeslot units).
+    // S_e = 1 means can dequeue every slot; S_e = 2 means at most once every 2 slots, etc.
+    // If empty or out-of-range for egress e, default to 1.
+    vector<unsigned int> egress_ser_factor;
     unsigned int buffer_slot_cnt = MAX_QUEUE_SIZE;
     // Pool capacities. If 0, default to buffer_slot_cnt.
     unsigned int ingress_pool_size = 0;
@@ -73,6 +81,8 @@ protected:
     unsigned int deq_step_idx() const;
     int ingress_queue_for_step(unsigned int k) const;
     unsigned int ingress_pool_cap() const;
+    unsigned int ingress_serialization_factor(unsigned int q) const;
+    unsigned int egress_serialization_factor(unsigned int e) const;
     unsigned int headroom_pool_cap() const;
     unsigned int egress_lossless_pool_cap() const;
 

@@ -38,6 +38,20 @@ unsigned int SharedBufferPoint::ingress_pool_cap() const {
     return sb_info.buffer_slot_cnt;
 }
 
+unsigned int SharedBufferPoint::ingress_serialization_factor(unsigned int q) const {
+    if (q >= sb_info.ingress_ser_factor.size()) return 1;
+    unsigned int f = sb_info.ingress_ser_factor[q];
+    if (f == 0) return 1;
+    return f;
+}
+
+unsigned int SharedBufferPoint::egress_serialization_factor(unsigned int e) const {
+    if (e >= sb_info.egress_ser_factor.size()) return 1;
+    unsigned int f = sb_info.egress_ser_factor[e];
+    if (f == 0) return 1;
+    return f;
+}
+
 unsigned int SharedBufferPoint::headroom_pool_cap() const {
     if (sb_info.headroom_pool_size > 0) return sb_info.headroom_pool_size;
     return sb_info.buffer_slot_cnt;
@@ -369,6 +383,24 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     // Per-slot demand is capped by configured max_demand_per_t and queue max_enq.
                     new_constr_map.insert(
                         named_constr(constr_name, demand_t <= (int) demand_ub));
+
+                    unsigned int ser_factor = ingress_serialization_factor(q);
+                    for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
+                        expr demand_next = demand_metric->val(t + dt).second -
+                                           demand_metric->val(t + dt - 1).second;
+                        snprintf(constr_name,
+                                 sizeof(constr_name),
+                                 "sb_demand_cooldown_q%u_t%u_dt%u_k%u",
+                                 q,
+                                 t,
+                                 dt,
+                                 k);
+                        // Cooldown semantics: if queue q injects at slot t, it cannot inject in the
+                        // next S_q-1 slots.
+                        new_constr_map.insert(named_constr(
+                            constr_name,
+                            implies(demand_t > 0, demand_next == 0)));
+                    }
 
                     snprintf(constr_name, sizeof(constr_name), "sb_has_enq_from_demand_q%u_t%u_k%u", q, t, k);
                     // Actual packet arrival requires both intent and successful admission.
@@ -1117,6 +1149,22 @@ void SharedBufferPoint::add_out_queue_constrs() {
             snprintf(constr_name, sizeof(constr_name), "sb_read_deq_eq_e%u_t%u_k%u", e, t, deq_k);
             // Read count for this egress equals out-queue deq count at time t.
             new_constr_map.insert(named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
+
+            unsigned int ser_factor = egress_serialization_factor(e);
+            for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "sb_deq_cooldown_e%u_t%u_dt%u_k%u",
+                         e,
+                         t,
+                         dt,
+                         deq_k);
+                // Cooldown semantics: if egress e dequeues at slot t, it cannot dequeue in the next
+                // S_e-1 slots.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    implies(outq->deq_cnt(t) > 0, outq->deq_cnt(t + dt) == 0)));
+            }
         }
     }
 
