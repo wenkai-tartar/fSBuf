@@ -40,7 +40,7 @@ void Demand::populate_val_exprs(NetContext& net_ctx) {
     // value
     value_[0] = demand_cnt_[0];
     for (unsigned int t = 1; t < total_time; t++) {
-        value_[t] = value_[t-1] + demand_cnt_[t];
+        value_[t] = value_[t - 1] + demand_cnt_[t];
     }
 
     // valid

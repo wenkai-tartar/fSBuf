@@ -20,7 +20,8 @@ public:
 
     void populate_val_exprs(NetContext& net_ctx) override;
 
-    void eval(const IndexedExample* eg, unsigned int time, unsigned int qind, metric_val& res) override;
+    void
+    eval(const IndexedExample* eg, unsigned int time, unsigned int qind, metric_val& res) override;
 
 private:
     vector<expr> demand_cnt_;

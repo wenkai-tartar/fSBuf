@@ -13,7 +13,7 @@
 
 class InputOnlySolver : Solver {
 public:
-    InputOnlySolver(){};
+    InputOnlySolver() {};
 
     solver_res_t check_workload_without_query(Workload wl);
     solver_res_t check_workload_with_query(Workload wl, IndexedExample* eg);

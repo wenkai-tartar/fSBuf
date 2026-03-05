@@ -103,9 +103,9 @@ protected:
 
     virtual void add_in_queue_constrs();
     virtual void add_out_queue_constrs();
-    
+
     virtual m_val_expr_t metric_val_expr(metric_t metric, unsigned int q, unsigned int t);
-    
+
     void add_constr(expr const& e, char const* p);
     void add_constr_from_map(map<string, expr> constr_map);
 

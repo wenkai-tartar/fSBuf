@@ -1579,9 +1579,8 @@ IndexedExample* ContentionPoint::index_example(Example* eg) {
             cout << "ContentionPoint::workload_satisifes_example: Example does not include "
                     "all queues."
                  << endl;
-            
         }
-        ieg->demands.push_back(eg->enqs[qid]); 
+        ieg->demands.push_back(eg->enqs[qid]);
     }
 
     return ieg;
@@ -2245,7 +2244,7 @@ m_val_expr_t ContentionPoint::get_expr(QSum qsum, unsigned int t) {
     //     res = res + val_expr.second;
     // }
     // return m_val_expr_t(mk_and(valid), res);
-    
+
     expr res = net_ctx.int_val(0);
     expr_vector valid(net_ctx.z3_ctx());
     qset_t qset = qsum.get_qset();

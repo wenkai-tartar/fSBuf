@@ -12,16 +12,15 @@
 #include <iostream>
 #include <sstream>
 
-const map<metric_t, metric_properties> Metric::properties = {{metric_t::CENQ, {true, true, true}},
-                                                             {metric_t::AIPG, {true, false, false}},
-                                                             {metric_t::DST, {true, false, false}},
-                                                             {metric_t::ECMP, {true, false, false}},
-                                                             {metric_t::QSIZE,
-                                                              {true, false, false}},
-                                                             {metric_t::CDEQ, {true, true, true}},
-                                                             {metric_t::CBLOCKED,
-                                                              {true, false, false}},
-                                                             {metric_t::DEMAND, {true, true, true}}};
+const map<metric_t, metric_properties> Metric::properties = {
+    {metric_t::CENQ, {true, true, true}},
+    {metric_t::AIPG, {true, false, false}},
+    {metric_t::DST, {true, false, false}},
+    {metric_t::ECMP, {true, false, false}},
+    {metric_t::QSIZE, {true, false, false}},
+    {metric_t::CDEQ, {true, true, true}},
+    {metric_t::CBLOCKED, {true, false, false}},
+    {metric_t::DEMAND, {true, true, true}}};
 
 Metric::Metric(metric_t m, Queue* queue, unsigned int total_time, NetContext& net_ctx):
 m_type(m),

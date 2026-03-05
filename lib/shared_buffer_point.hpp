@@ -48,34 +48,35 @@ protected:
     bool shared_vars_initialized_ = false;
 
     // Per-slot identity state at micro-step granularity [b][t][k].
-    vector<vector<vector<expr>>> buf_pkt_; // [b][t][k] pkt
-    vector<vector<vector<expr>>> buf_in_; // [b][t][k] int
-    vector<vector<vector<expr>>> buf_e_; // [b][t][k] int
+    vector<vector<vector<expr>>> buf_pkt_;   // [b][t][k] pkt
+    vector<vector<vector<expr>>> buf_in_;    // [b][t][k] int
+    vector<vector<vector<expr>>> buf_e_;     // [b][t][k] int
     vector<vector<vector<expr>>> buf_stamp_; // [b][t][k] int, -1 means empty
     // k indexes micro-state snapshots within a coarse slot t.
-    vector<vector<expr>> paused_; // [q][t] bool, effective pause state for slot t
+    vector<vector<expr>> paused_;                   // [q][t] bool, effective pause state for slot t
     vector<vector<vector<expr>>> ingress_pool_occ_; // [q][t][k] int
-    vector<vector<expr>> ingress_pool_total_occ_; // [t][k] int
-    vector<vector<vector<expr>>> headroom_pool_occ_; // [q][t][k] int
-    vector<vector<expr>> headroom_pool_total_occ_; // [t][k] int
+    vector<vector<expr>> ingress_pool_total_occ_;   // [t][k] int
+    vector<vector<vector<expr>>> headroom_pool_occ_;        // [q][t][k] int
+    vector<vector<expr>> headroom_pool_total_occ_;          // [t][k] int
     vector<vector<vector<expr>>> egress_lossless_pool_occ_; // [e][t][k] int
-    vector<vector<expr>> egress_lossless_pool_total_occ_; // [t][k] int
+    vector<vector<expr>> egress_lossless_pool_total_occ_;   // [t][k] int
 
     // Action variables upgraded to micro-step granularity [..][t][k].
     vector<vector<vector<expr>>> admit_in_; // [q][t][k] bool
-    vector<vector<vector<expr>>> admit_e_; // [e][t][k] bool
-    vector<vector<vector<expr>>> admit_; // [q][t][k] bool
+    vector<vector<vector<expr>>> admit_e_;  // [e][t][k] bool
+    vector<vector<vector<expr>>> admit_;    // [q][t][k] bool
     // vector<vector<vector<expr>>> drop_or_block_; // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_in_; // [q][t][k] bool
-    vector<vector<vector<expr>>> release_in_; // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_hdr_; // [q][t][k] bool
-    vector<vector<vector<expr>>> release_hdr_; // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_eg_lossless_; // [e][t][k] bool
-    vector<vector<vector<expr>>> release_e_; // [e][t][k] bool
+    vector<vector<vector<expr>>> alloc_in_;           // [q][t][k] bool
+    vector<vector<vector<expr>>> release_in_;         // [q][t][k] bool
+    vector<vector<vector<expr>>> alloc_hdr_;          // [q][t][k] bool
+    vector<vector<vector<expr>>> release_hdr_;        // [q][t][k] bool
+    vector<vector<vector<expr>>> alloc_eg_lossless_;  // [e][t][k] bool
+    vector<vector<vector<expr>>> release_e_;          // [e][t][k] bool
     vector<vector<vector<vector<expr>>>> write_slot_; // [q][b][t][k] bool
-    vector<vector<vector<vector<expr>>>> read_slot_; // [e][b][t][k] bool
+    vector<vector<vector<vector<expr>>>> read_slot_;  // [e][b][t][k] bool
     vector<vector<expr>> min_stamp_e_; // [e][t] int, HOL timestamp for egress e at deq step
-    vector<vector<expr>> has_pkt_e_; // [e][t] bool, whether egress e has any readable slot at deq step
+    vector<vector<expr>>
+        has_pkt_e_; // [e][t] bool, whether egress e has any readable slot at deq step
 
     unsigned int micro_step_cnt() const;
     unsigned int deq_step_idx() const;

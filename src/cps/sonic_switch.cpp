@@ -37,12 +37,11 @@ void SONiCSwitch::add_nodes() {
     out_info.type = queue_t::SB_EGRESS;
 
     cid_t m_id = "SB_CORE";
-    SharedBufferSeqQM* sb_qm = new SharedBufferSeqQM(
-        m_id,
-        total_time,
-        vector<QueueInfo>(ingress_queue_cnt_, in_info),
-        vector<QueueInfo>(port_cnt_, out_info),
-        net_ctx);
+    SharedBufferSeqQM* sb_qm = new SharedBufferSeqQM(m_id,
+                                                     total_time,
+                                                     vector<QueueInfo>(ingress_queue_cnt_, in_info),
+                                                     vector<QueueInfo>(port_cnt_, out_info),
+                                                     net_ctx);
     nodes.push_back(m_id);
     id_to_qm[m_id] = sb_qm;
 }
@@ -66,7 +65,7 @@ void SONiCSwitch::add_metrics() {
         Demand* d = new Demand(queue, total_time, net_ctx);
         demand_.push_back(d);
         metrics[metric_t::DEMAND][queue->get_id()] = d;
-        queue->add_metric(metric_t::DEMAND, d);        
+        queue->add_metric(metric_t::DEMAND, d);
     }
 }
 

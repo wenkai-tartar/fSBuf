@@ -643,9 +643,10 @@ void SBIngressQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_
         // Couting: enq_cnt is exactly 0/1 based on enqs[0] validity.
         if (max_enq_ > 0) {
             snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_from_enq0_%u", id.c_str(), t);
-            constr_map.insert(named_constr(
-                constr_name,
-                enq_cnt_[t] == ite(net_ctx.pkt2val(enqs_[0][t]), net_ctx.int_val(1), net_ctx.int_val(0))));
+            constr_map.insert(named_constr(constr_name,
+                                           enq_cnt_[t] == ite(net_ctx.pkt2val(enqs_[0][t]),
+                                                              net_ctx.int_val(1),
+                                                              net_ctx.int_val(0))));
         } else {
             snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_zero_%u", id.c_str(), t);
             constr_map.insert(named_constr(constr_name, enq_cnt_[t] == 0));
