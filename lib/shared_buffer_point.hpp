@@ -43,6 +43,7 @@ protected:
     vector<vector<vector<expr>>> buf_pkt_; // [b][t][k] pkt
     vector<vector<vector<expr>>> buf_in_; // [b][t][k] int
     vector<vector<vector<expr>>> buf_e_; // [b][t][k] int
+    vector<vector<vector<expr>>> buf_stamp_; // [b][t][k] int, -1 means empty
     // k indexes micro-state snapshots within a coarse slot t.
     vector<vector<expr>> paused_; // [q][t] bool, effective pause state for slot t
     vector<vector<vector<expr>>> ingress_pool_occ_; // [q][t][k] int
@@ -65,6 +66,8 @@ protected:
     vector<vector<vector<expr>>> release_e_; // [e][t][k] bool
     vector<vector<vector<vector<expr>>>> write_slot_; // [q][b][t][k] bool
     vector<vector<vector<vector<expr>>>> read_slot_; // [e][b][t][k] bool
+    vector<vector<expr>> min_stamp_e_; // [e][t] int, HOL timestamp for egress e at deq step
+    vector<vector<expr>> has_pkt_e_; // [e][t] bool, whether egress e has any readable slot at deq step
 
     unsigned int micro_step_cnt() const;
     unsigned int deq_step_idx() const;

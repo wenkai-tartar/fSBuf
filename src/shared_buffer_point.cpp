@@ -69,6 +69,7 @@ void SharedBufferPoint::init_shared_vars() {
     buf_pkt_.clear();
     buf_in_.clear();
     buf_e_.clear();
+    buf_stamp_.clear();
     paused_.clear();
     ingress_pool_occ_.clear();
     ingress_pool_total_occ_.clear();
@@ -79,6 +80,8 @@ void SharedBufferPoint::init_shared_vars() {
 
     write_slot_.clear();
     read_slot_.clear();
+    min_stamp_e_.clear();
+    has_pkt_e_.clear();
 
     admit_in_.resize(in_cnt);
     admit_e_.resize(eg_cnt);
@@ -94,6 +97,7 @@ void SharedBufferPoint::init_shared_vars() {
     buf_pkt_.resize(slot_cnt);
     buf_in_.resize(slot_cnt);
     buf_e_.resize(slot_cnt);
+    buf_stamp_.resize(slot_cnt);
     paused_.resize(in_cnt);
     ingress_pool_occ_.resize(in_cnt);
     headroom_pool_occ_.resize(in_cnt);
@@ -101,6 +105,8 @@ void SharedBufferPoint::init_shared_vars() {
 
     write_slot_.resize(in_cnt);
     read_slot_.resize(eg_cnt);
+    min_stamp_e_.resize(eg_cnt);
+    has_pkt_e_.resize(eg_cnt);
     ingress_pool_total_occ_.resize(total_time);
     headroom_pool_total_occ_.resize(total_time);
     egress_lossless_pool_total_occ_.resize(total_time);
@@ -111,6 +117,7 @@ void SharedBufferPoint::init_shared_vars() {
         buf_pkt_[b].resize(total_time);
         buf_in_[b].resize(total_time);
         buf_e_[b].resize(total_time);
+        buf_stamp_[b].resize(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
             for (unsigned int k = 0; k < k_states; k++) {
                 snprintf(vname, sizeof(vname), "sb_buf_pkt[%u][%u][%u]", b, t, k);
@@ -119,6 +126,8 @@ void SharedBufferPoint::init_shared_vars() {
                 buf_in_[b][t].push_back(net_ctx.int_const(vname));
                 snprintf(vname, sizeof(vname), "sb_buf_e[%u][%u][%u]", b, t, k);
                 buf_e_[b][t].push_back(net_ctx.int_const(vname));
+                snprintf(vname, sizeof(vname), "sb_buf_stamp[%u][%u][%u]", b, t, k);
+                buf_stamp_[b][t].push_back(net_ctx.int_const(vname));
             }
         }
     }
@@ -195,6 +204,11 @@ void SharedBufferPoint::init_shared_vars() {
         egress_lossless_pool_occ_[e].resize(total_time);
 
         for (unsigned int t = 0; t < total_time; t++) {
+            snprintf(vname, sizeof(vname), "sb_min_stamp_e[%u][%u]", e, t);
+            min_stamp_e_[e].push_back(net_ctx.int_const(vname));
+            snprintf(vname, sizeof(vname), "sb_has_pkt_e[%u][%u]", e, t);
+            has_pkt_e_[e].push_back(net_ctx.bool_const(vname));
+
             for (unsigned int k = 0; k < micro_steps; k++) {
                 snprintf(vname, sizeof(vname), "sb_admit_e[%u][%u][%u]", e, t, k);
                 admit_e_[e][t].push_back(net_ctx.bool_const(vname));
@@ -542,6 +556,10 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 // Empty slots reset egress owner metadata to -1 (no owner).
                 new_constr_map.insert(
                     named_constr(constr_name, implies(!used, buf_e_[b][t][k] == -1)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_empty_stamp_neg1_b%u_t%u_k%u", b, t, k);
+                // Empty slots reset timestamp to -1.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(!used, buf_stamp_[b][t][k] == -1)));
 
                 snprintf(constr_name, sizeof(constr_name), "sb_buf_occ_ing_lb_b%u_t%u_k%u", b, t, k);
                 // Occupied slots must carry a valid ingress owner index.
@@ -559,6 +577,10 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 // Occupied slots must carry a valid egress owner index.
                 new_constr_map.insert(
                     named_constr(constr_name, implies(used, buf_e_[b][t][k] < (int) eg_cnt)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_occ_stamp_nonneg_b%u_t%u_k%u", b, t, k);
+                // Occupied slots must carry a non-negative enqueue timestamp.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(used, buf_stamp_[b][t][k] >= 0)));
             }
         }
     }
@@ -710,6 +732,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
             for (unsigned int b = 0; b < slot_cnt; b++) {
                 expr any_write = bool0;
                 expr any_read = bool0;
+                expr write_stamp = net_ctx.int_val((int) (t * micro_steps + k));
 
                 for (unsigned int q = 0; q < in_cnt; q++) {
                     any_write = any_write || write_slot_[q][b][t][k];
@@ -757,6 +780,17 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                     new_constr_map.insert(named_constr(
                         constr_name,
                         implies(write_slot_[q][b][t][k], buf_e_[b][t][k + 1] == dst_eg)));
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_buf_stamp_write_bind_q%u_b%u_t%u_k%u",
+                             q,
+                             b,
+                             t,
+                             k);
+                    // Writing queue q to slot b records this micro-step timestamp.
+                    new_constr_map.insert(named_constr(
+                        constr_name,
+                        implies(write_slot_[q][b][t][k], buf_stamp_[b][t][k + 1] == write_stamp)));
                 }
 
                 snprintf(constr_name, sizeof(constr_name), "sb_buf_pkt_read_clear_b%u_t%u_k%u", b, t, k);
@@ -769,6 +803,10 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 snprintf(constr_name, sizeof(constr_name), "sb_buf_e_read_clear_b%u_t%u_k%u", b, t, k);
                 // Any read clears egress owner metadata to -1 in the next micro-state.
                 new_constr_map.insert(named_constr(constr_name, implies(any_read, buf_e_[b][t][k + 1] == -1)));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_stamp_read_clear_b%u_t%u_k%u", b, t, k);
+                // Any read clears timestamp to -1 in the next micro-state.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(any_read, buf_stamp_[b][t][k + 1] == -1)));
 
                 snprintf(constr_name, sizeof(constr_name), "sb_buf_pkt_keep_b%u_t%u_k%u", b, t, k);
                 // Without read/write action, packet identity carries over to the next micro-state.
@@ -785,6 +823,11 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 new_constr_map.insert(named_constr(
                     constr_name,
                     implies(!any_write && !any_read, buf_e_[b][t][k + 1] == buf_e_[b][t][k])));
+                snprintf(constr_name, sizeof(constr_name), "sb_buf_stamp_keep_b%u_t%u_k%u", b, t, k);
+                // Without read/write action, timestamp carries over.
+                new_constr_map.insert(named_constr(
+                    constr_name,
+                    implies(!any_write && !any_read, buf_stamp_[b][t][k + 1] == buf_stamp_[b][t][k])));
             }
         }
     }
@@ -876,6 +919,9 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
         snprintf(constr_name, sizeof(constr_name), "sb_buf_e_init_neg1_b%u", b);
         // Initial egress owner metadata is -1 (no owner).
         new_constr_map.insert(named_constr(constr_name, buf_e_[b][0][0] == -1));
+        snprintf(constr_name, sizeof(constr_name), "sb_buf_stamp_init_neg1_b%u", b);
+        // Initial slot timestamp is -1 (empty).
+        new_constr_map.insert(named_constr(constr_name, buf_stamp_[b][0][0] == -1));
     }
 
     // Cross-slot state handoff: [t][last_k] -> [t+1][0].
@@ -933,6 +979,11 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
             new_constr_map.insert(named_constr(
                 constr_name,
                 buf_e_[b][t + 1][0] == buf_e_[b][t][micro_steps]));
+            snprintf(constr_name, sizeof(constr_name), "sb_buf_stamp_handoff_b%u_t%u", b, t);
+            // End-of-slot slot timestamp becomes next slot's initial timestamp.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                buf_stamp_[b][t + 1][0] == buf_stamp_[b][t][micro_steps]));
         }
 
         snprintf(constr_name, sizeof(constr_name), "sb_ing_used_handoff_t%u", t);
@@ -985,8 +1036,15 @@ void SharedBufferPoint::add_out_queue_constrs() {
         Queue* outq = out_queues[e];
         for (unsigned int t = 0; t < total_time; t++) {
             expr reads_this_e_t_sum = int0;
+            expr_vector cand_vec(net_ctx.z3_ctx());
+            expr_vector min_witness_vec(net_ctx.z3_ctx());
 
             for (unsigned int b = 0; b < slot_cnt; b++) {
+                expr cand = net_ctx.pkt2val(buf_pkt_[b][t][deq_k]) &&
+                            (buf_e_[b][t][deq_k] == (int) e);
+                cand_vec.push_back(cand);
+                min_witness_vec.push_back(cand && (buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t]));
+
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "sb_read_requires_nonempty_e%u_b%u_t%u_k%u",
@@ -1011,8 +1069,48 @@ void SharedBufferPoint::add_out_queue_constrs() {
                     named_constr(constr_name,
                                  implies(read_slot_[e][b][t][deq_k],
                                          buf_e_[b][t][deq_k] == (int) e)));
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "sb_read_requires_hol_stamp_e%u_b%u_t%u_k%u",
+                         e,
+                         b,
+                         t,
+                         deq_k);
+                // A read action by egress e must target an HOL packet (minimum timestamp among e's candidates).
+                new_constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(read_slot_[e][b][t][deq_k],
+                                         buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t])));
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "sb_min_stamp_lb_e%u_b%u_t%u_k%u",
+                         e,
+                         b,
+                         t,
+                         deq_k);
+                // Minimum timestamp is a lower bound of each readable candidate's timestamp.
+                new_constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(cand, buf_stamp_[b][t][deq_k] >= min_stamp_e_[e][t])));
                 reads_this_e_t_sum = reads_this_e_t_sum + b2i(read_slot_[e][b][t][deq_k]);
             }
+
+            snprintf(constr_name, sizeof(constr_name), "sb_has_pkt_e_def_e%u_t%u", e, t);
+            // has_pkt_e is true iff egress e has at least one readable candidate at the deq micro-step.
+            new_constr_map.insert(
+                named_constr(constr_name, has_pkt_e_[e][t] == mk_or(cand_vec)));
+            snprintf(constr_name, sizeof(constr_name), "sb_min_stamp_empty_e%u_t%u", e, t);
+            // If no candidate exists for egress e, min_stamp is set to -1.
+            new_constr_map.insert(
+                named_constr(constr_name, implies(!has_pkt_e_[e][t], min_stamp_e_[e][t] == -1)));
+            snprintf(constr_name, sizeof(constr_name), "sb_min_stamp_lb_e%u_t%u", e, t);
+            // min_stamp lower bound.
+            // TODO: this may be redundant
+            new_constr_map.insert(named_constr(constr_name, min_stamp_e_[e][t] >= -1));
+            snprintf(constr_name, sizeof(constr_name), "sb_min_stamp_witness_e%u_t%u", e, t);
+            // If candidates exist, at least one candidate has timestamp equal to min_stamp.
+            new_constr_map.insert(
+                named_constr(constr_name, implies(has_pkt_e_[e][t], mk_or(min_witness_vec))));
 
             snprintf(constr_name, sizeof(constr_name), "sb_release_e_def_e%u_t%u_k%u", e, t, deq_k);
             // Egress release flag is true iff this egress reads at least one slot in deq micro-step.
