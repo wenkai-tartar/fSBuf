@@ -7,7 +7,7 @@
 
 #include "sonic_switch.hpp"
 
-#include "priority_qm.hpp"
+#include "shared_buffer_stub_qm.hpp"
 
 #include <sstream>
 
@@ -27,23 +27,24 @@ void SONiCSwitch::add_nodes() {
     in_info.max_enq = 1;
     in_info.max_deq = 1;
     in_info.meta = 0;
-    in_info.type = queue_t::IMM_QUEUE;
+    in_info.type = queue_t::SB_INGRESS;
 
     QueueInfo out_info{};
     out_info.size = MAX_QUEUE_SIZE;
     out_info.max_enq = 1;
     out_info.max_deq = 1;
     out_info.meta = 0;
-    out_info.type = queue_t::QUEUE;
+    out_info.type = queue_t::SB_EGRESS;
 
-    cid_t m_id = "SB_STRICT";
-    PriorityQM* prio_qm = new PriorityQM(m_id,
-                                         total_time,
-                                         vector<QueueInfo>(ingress_queue_cnt_, in_info),
-                                         out_info,
-                                         net_ctx);
+    cid_t m_id = "SB_CORE";
+    SharedBufferStubQM* sb_qm = new SharedBufferStubQM(
+        m_id,
+        total_time,
+        vector<QueueInfo>(ingress_queue_cnt_, in_info),
+        vector<QueueInfo>(port_cnt_, out_info),
+        net_ctx);
     nodes.push_back(m_id);
-    id_to_qm[m_id] = prio_qm;
+    id_to_qm[m_id] = sb_qm;
 }
 
 void SONiCSwitch::add_edges() {

@@ -1018,8 +1018,6 @@ void SharedBufferPoint::add_in_queue_constrs() {
 }
 
 void SharedBufferPoint::add_out_queue_constrs() {
-    ContentionPoint::add_out_queue_constrs();
-
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
     const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
     const unsigned int deq_k = deq_step_idx();

@@ -20,7 +20,7 @@
 class Metric;
 enum class metric_t;
 
-enum class queue_t { QUEUE = 0, IMM_QUEUE, LINK };
+enum class queue_t { QUEUE = 0, IMM_QUEUE, LINK, SB_INGRESS, SB_EGRESS };
 
 struct QueueInfo {
     unsigned int size;
@@ -120,5 +120,39 @@ public:
 
 
     friend ostream& operator<<(ostream& os, const Link& q);
+};
+
+/* *********************** SBIngressQueue ********************** */
+/* Shared-buffer ingress compatibility queue:
+ * keep only enqs -> enq_cnt constraints, do not model queue sliding-window behavior.
+ */
+class SBIngressQueue : public Queue {
+public:
+    SBIngressQueue(cid_t module_id,
+                   cid_t queue_id,
+                   unsigned int size,
+                   unsigned int max_enq,
+                   unsigned int max_deq,
+                   unsigned int total_time,
+                   NetContext& net_ctx);
+
+    void add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) override;
+};
+
+/* *********************** SBEgressQueue ********************** */
+/* Shared-buffer egress compatibility queue:
+ * deq_cnt is controlled by shared-buffer constraints; queue internals are not modeled.
+ */
+class SBEgressQueue : public Queue {
+public:
+    SBEgressQueue(cid_t module_id,
+                  cid_t queue_id,
+                  unsigned int size,
+                  unsigned int max_enq,
+                  unsigned int max_deq,
+                  unsigned int total_time,
+                  NetContext& net_ctx);
+
+    void add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) override;
 };
 #endif /* Queue_hpp */

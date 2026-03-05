@@ -606,3 +606,89 @@ ostream& operator<<(ostream& os, const Link& q) {
     os << q.get_id();
     return os;
 }
+
+/* ********************* SBIngressQueue *********************** */
+
+SBIngressQueue::SBIngressQueue(cid_t module_id,
+                               cid_t queue_id,
+                               unsigned int size,
+                               unsigned int max_enq,
+                               unsigned int max_deq,
+                               unsigned int total_time,
+                               NetContext& net_ctx):
+Queue(module_id, queue_id, size, max_enq, max_deq, total_time, net_ctx) {
+}
+
+void SBIngressQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
+    char constr_name[120];
+
+    for (unsigned int t = 0; t < total_time; t++) {
+        // Shared-buffer ingress queue does not model internal queue state.
+        // Keep element state inert so no legacy queue behavior leaks in.
+        for (unsigned int p = 0; p < size_; p++) {
+            snprintf(constr_name, sizeof(constr_name), "%s_elem_null_%u_%u", id.c_str(), p, t);
+            constr_map.insert(named_constr(constr_name, elems_[p][t] == net_ctx.null_pkt()));
+        }
+
+        // Ingress compatibility queue never dequeues through legacy queue semantics.
+        snprintf(constr_name, sizeof(constr_name), "%s_deq_zero_%u", id.c_str(), t);
+        constr_map.insert(named_constr(constr_name, deq_cnt_[t] == 0));
+
+        // No holes in enqueue inputs.
+        for (unsigned int p = 0; p + 1 < max_enq_; p++) {
+            expr enq1_val = net_ctx.pkt2val(enqs_[p][t]);
+            expr enq2_val = net_ctx.pkt2val(enqs_[p + 1][t]);
+            snprintf(constr_name, sizeof(constr_name), "%s_no_enq_holes_%u_%u", id.c_str(), p, t);
+            constr_map.insert(named_constr(constr_name, enq1_val || !enq2_val));
+        }
+
+        // Derive enq_cnt from enqs only.
+        expr_vector enq_cnt_vec(net_ctx.z3_ctx());
+        enq_cnt_vec.push_back(enq_cnt_[t] >= 0);
+        enq_cnt_vec.push_back(enq_cnt_[t] <= (int) max_enq_);
+        for (unsigned int i = 0; i < max_enq_; i++) {
+            enq_cnt_vec.push_back(implies(net_ctx.pkt2val(enqs_[i][t]), enq_cnt_[t] > (int) i));
+            enq_cnt_vec.push_back(implies(!net_ctx.pkt2val(enqs_[i][t]), enq_cnt_[t] <= (int) i));
+        }
+        snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_bounds_%u", id.c_str(), t);
+        constr_map.insert(named_constr(constr_name, mk_and(enq_cnt_vec)));
+    }
+}
+
+/* ********************* SBEgressQueue *********************** */
+
+SBEgressQueue::SBEgressQueue(cid_t module_id,
+                             cid_t queue_id,
+                             unsigned int size,
+                             unsigned int max_enq,
+                             unsigned int max_deq,
+                             unsigned int total_time,
+                             NetContext& net_ctx):
+Queue(module_id, queue_id, size, max_enq, max_deq, total_time, net_ctx) {
+}
+
+void SBEgressQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
+    char constr_name[120];
+
+    for (unsigned int t = 0; t < total_time; t++) {
+        // Shared-buffer egress queue keeps no legacy queue payload state.
+        for (unsigned int p = 0; p < size_; p++) {
+            snprintf(constr_name, sizeof(constr_name), "%s_elem_null_%u_%u", id.c_str(), p, t);
+            constr_map.insert(named_constr(constr_name, elems_[p][t] == net_ctx.null_pkt()));
+        }
+        for (unsigned int p = 0; p < max_enq_; p++) {
+            snprintf(constr_name, sizeof(constr_name), "%s_enq_null_%u_%u", id.c_str(), p, t);
+            constr_map.insert(named_constr(constr_name, enqs_[p][t] == net_ctx.null_pkt()));
+        }
+
+        // enq_cnt is unused for shared-buffer egress compatibility queues.
+        snprintf(constr_name, sizeof(constr_name), "%s_enq_zero_%u", id.c_str(), t);
+        constr_map.insert(named_constr(constr_name, enq_cnt_[t] == 0));
+
+        // deq_cnt is driven externally by shared-buffer read constraints; keep only bounds.
+        snprintf(constr_name, sizeof(constr_name), "%s_deq_lb_%u", id.c_str(), t);
+        constr_map.insert(named_constr(constr_name, deq_cnt_[t] >= 0));
+        snprintf(constr_name, sizeof(constr_name), "%s_deq_ub_%u", id.c_str(), t);
+        constr_map.insert(named_constr(constr_name, deq_cnt_[t] <= (int) max_deq_));
+    }
+}
