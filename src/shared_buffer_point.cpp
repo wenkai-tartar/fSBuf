@@ -1295,6 +1295,14 @@ void SharedBufferPoint::add_out_queue_constrs() {
             // has_pkt_e is true iff egress e has at least one readable candidate at the deq
             // micro-step.
             new_constr_map.insert(named_constr(constr_name, has_pkt_e_[e][t] == mk_or(cand_vec)));
+            snprintf(constr_name, sizeof(constr_name), "sb_work_conserving_nonempty_e%u_t%u", e, t);
+            // Work-conserving service: if egress e has packets, it must dequeue in this slot.
+            new_constr_map.insert(
+                named_constr(constr_name, implies(has_pkt_e_[e][t], outq->deq_cnt(t) > 0)));
+            snprintf(constr_name, sizeof(constr_name), "sb_work_conserving_empty_e%u_t%u", e, t);
+            // If egress e has no packets, dequeue count must be zero.
+            new_constr_map.insert(
+                named_constr(constr_name, implies(!has_pkt_e_[e][t], outq->deq_cnt(t) == 0)));
             snprintf(constr_name, sizeof(constr_name), "sb_min_stamp_empty_e%u_t%u", e, t);
             // If no candidate exists for egress e, min_stamp is set to -1.
             new_constr_map.insert(
