@@ -634,24 +634,22 @@ void SBIngressQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_
         snprintf(constr_name, sizeof(constr_name), "%s_deq_zero_%u", id.c_str(), t);
         constr_map.insert(named_constr(constr_name, deq_cnt_[t] == 0));
 
-        // No holes in enqueue inputs.
-        for (unsigned int p = 0; p + 1 < max_enq_; p++) {
-            expr enq1_val = net_ctx.pkt2val(enqs_[p][t]);
-            expr enq2_val = net_ctx.pkt2val(enqs_[p + 1][t]);
-            snprintf(constr_name, sizeof(constr_name), "%s_no_enq_holes_%u_%u", id.c_str(), p, t);
-            constr_map.insert(named_constr(constr_name, enq1_val || !enq2_val));
+        // Shared-buffer ingress allows at most one arrival per slot for this queue.
+        for (unsigned int p = 1; p < max_enq_; p++) {
+            snprintf(constr_name, sizeof(constr_name), "%s_enq_null_%u_%u", id.c_str(), p, t);
+            constr_map.insert(named_constr(constr_name, enqs_[p][t] == net_ctx.null_pkt()));
         }
 
-        // Derive enq_cnt from enqs only.
-        expr_vector enq_cnt_vec(net_ctx.z3_ctx());
-        enq_cnt_vec.push_back(enq_cnt_[t] >= 0);
-        enq_cnt_vec.push_back(enq_cnt_[t] <= (int) max_enq_);
-        for (unsigned int i = 0; i < max_enq_; i++) {
-            enq_cnt_vec.push_back(implies(net_ctx.pkt2val(enqs_[i][t]), enq_cnt_[t] > (int) i));
-            enq_cnt_vec.push_back(implies(!net_ctx.pkt2val(enqs_[i][t]), enq_cnt_[t] <= (int) i));
+        // Couting: enq_cnt is exactly 0/1 based on enqs[0] validity.
+        if (max_enq_ > 0) {
+            snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_from_enq0_%u", id.c_str(), t);
+            constr_map.insert(named_constr(
+                constr_name,
+                enq_cnt_[t] == ite(net_ctx.pkt2val(enqs_[0][t]), net_ctx.int_val(1), net_ctx.int_val(0))));
+        } else {
+            snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_zero_%u", id.c_str(), t);
+            constr_map.insert(named_constr(constr_name, enq_cnt_[t] == 0));
         }
-        snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_bounds_%u", id.c_str(), t);
-        constr_map.insert(named_constr(constr_name, mk_and(enq_cnt_vec)));
     }
 }
 
