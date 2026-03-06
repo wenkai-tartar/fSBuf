@@ -9,6 +9,7 @@
 #include "shared_buffer_seq_qm.hpp"
 
 #include <cstdio>
+#include <stdexcept>
 
 SharedBufferPoint::SharedBufferPoint(unsigned int total_time, SharedBufferPointInfo info):
 ContentionPoint(total_time),
@@ -54,6 +55,10 @@ unsigned int SharedBufferPoint::egress_serialization_factor(unsigned int e) cons
     return f;
 }
 
+unsigned int SharedBufferPoint::upstream_sender_for_ingress(unsigned int q) const {
+    return sb_info.ingress_upstream_sender[q];
+}
+
 unsigned int SharedBufferPoint::headroom_pool_cap() const {
     if (sb_info.headroom_pool_size > 0) return sb_info.headroom_pool_size;
     return sb_info.buffer_slot_cnt;
@@ -66,10 +71,32 @@ unsigned int SharedBufferPoint::egress_lossless_pool_cap() const {
 
 void SharedBufferPoint::init_shared_vars() {
     const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int sender_cnt = (unsigned int) sb_info.ingress_upstream_sender.size();
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
     const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
     const unsigned int micro_steps = micro_step_cnt();
     const unsigned int k_states = micro_steps + 1;
+
+    if (sb_info.ingress_upstream_sender.size() != in_cnt) {
+        throw std::runtime_error(
+            "SharedBufferPoint: ingress_upstream_sender is required and must have exactly one entry per ingress queue.");
+    }
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        unsigned int u = sb_info.ingress_upstream_sender[q];
+        if (u >= sender_cnt) {
+            throw std::runtime_error(
+                "SharedBufferPoint: ingress_upstream_sender contains out-of-range queue index.");
+        }
+    }
+    vector<bool> sender_seen(sender_cnt, false);
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        unsigned int u = sb_info.ingress_upstream_sender[q];
+        if (sender_seen[u]) {
+            throw std::runtime_error(
+                "SharedBufferPoint: ingress_upstream_sender must be one-to-one (p2p).");
+        }
+        sender_seen[u] = true;
+    }
 
     admit_in_.clear();
     admit_e_.clear();
@@ -84,6 +111,11 @@ void SharedBufferPoint::init_shared_vars() {
     buf_e_.clear();
     buf_stamp_.clear();
     paused_.clear();
+    pause_tx_.clear();
+    resume_tx_.clear();
+    pause_rx_.clear();
+    resume_rx_.clear();
+    upstream_paused_.clear();
     ingress_pool_occ_.clear();
     ingress_pool_total_occ_.clear();
     headroom_pool_occ_.clear();
@@ -109,6 +141,11 @@ void SharedBufferPoint::init_shared_vars() {
     buf_e_.resize(slot_cnt);
     buf_stamp_.resize(slot_cnt);
     paused_.resize(in_cnt);
+    pause_tx_.resize(in_cnt);
+    resume_tx_.resize(in_cnt);
+    pause_rx_.resize(sender_cnt);
+    resume_rx_.resize(sender_cnt);
+    upstream_paused_.resize(sender_cnt);
     ingress_pool_occ_.resize(in_cnt);
     headroom_pool_occ_.resize(in_cnt);
     egress_lossless_pool_occ_.resize(eg_cnt);
@@ -141,7 +178,6 @@ void SharedBufferPoint::init_shared_vars() {
             }
         }
     }
-
     for (unsigned int q = 0; q < in_cnt; q++) {
         write_slot_[q].resize(slot_cnt);
         admit_in_[q].resize(total_time);
@@ -150,12 +186,18 @@ void SharedBufferPoint::init_shared_vars() {
         alloc_in_[q].resize(total_time);
         alloc_hdr_[q].resize(total_time);
         paused_[q].reserve(total_time);
+        pause_tx_[q].reserve(total_time);
+        resume_tx_[q].reserve(total_time);
         ingress_pool_occ_[q].resize(total_time);
         headroom_pool_occ_[q].resize(total_time);
 
         for (unsigned int t = 0; t < total_time; t++) {
             snprintf(vname, sizeof(vname), "sb_paused[%u][%u]", q, t);
             paused_[q].push_back(net_ctx.bool_const(vname));
+            snprintf(vname, sizeof(vname), "sb_pause_tx[%u][%u]", q, t);
+            pause_tx_[q].push_back(net_ctx.bool_const(vname));
+            snprintf(vname, sizeof(vname), "sb_resume_tx[%u][%u]", q, t);
+            resume_tx_[q].push_back(net_ctx.bool_const(vname));
 
             for (unsigned int k = 0; k < micro_steps; k++) {
                 snprintf(vname, sizeof(vname), "sb_admit_in[%u][%u][%u]", q, t, k);
@@ -189,6 +231,19 @@ void SharedBufferPoint::init_shared_vars() {
         }
     }
 
+    for (unsigned int s = 0; s < sender_cnt; s++) {
+        pause_rx_[s].reserve(total_time);
+        resume_rx_[s].reserve(total_time);
+        upstream_paused_[s].reserve(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            snprintf(vname, sizeof(vname), "sb_pause_rx_sender[%u][%u]", s, t);
+            pause_rx_[s].push_back(net_ctx.bool_const(vname));
+            snprintf(vname, sizeof(vname), "sb_resume_rx_sender[%u][%u]", s, t);
+            resume_rx_[s].push_back(net_ctx.bool_const(vname));
+            snprintf(vname, sizeof(vname), "sb_upstream_paused_sender[%u][%u]", s, t);
+            upstream_paused_[s].push_back(net_ctx.bool_const(vname));
+        }
+    }
     for (unsigned int t = 0; t < total_time; t++) {
         for (unsigned int k = 0; k < k_states; k++) {
             snprintf(vname, sizeof(vname), "sb_ingress_pool_total_occ[%u][%u]", t, k);
@@ -199,7 +254,6 @@ void SharedBufferPoint::init_shared_vars() {
             egress_lossless_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
         }
     }
-
     for (unsigned int e = 0; e < eg_cnt; e++) {
         read_slot_[e].resize(slot_cnt);
         admit_e_[e].resize(total_time);
@@ -235,7 +289,6 @@ void SharedBufferPoint::init_shared_vars() {
             }
         }
     }
-
     shared_vars_initialized_ = true;
 }
 
@@ -455,23 +508,26 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                                  q,
                                  t,
                                  k);
-                        // Actual packet arrival requires both intent and successful admission.
-                        new_constr_map.insert(
-                            named_constr(constr_name,
-                                         implies(q_active,
-                                                 has_enq == (has_demand && admit_[q][t][k]))));
-                        snprintf(constr_name,
-                                 sizeof(constr_name),
-                                 "sb_admit_in_from_demand_q%u_t%u_k%u",
-                                 q,
-                                 t,
-                                 k);
-                        // Ingress-side request follows intent; egress/paused logic decides final
-                        // admit.
-                        new_constr_map.insert(
-                            named_constr(constr_name,
-                                         implies(q_active, admit_in_[q][t][k] == has_demand)));
+                        // For CP input ingress queues, demand and delayed upstream pause/resume
+                        // determine whether a packet actually arrives on enqs[0].
+                        new_constr_map.insert(named_constr(
+                            constr_name,
+                            implies(q_active,
+                                    has_enq ==
+                                        (has_demand &&
+                                         !upstream_paused_[upstream_sender_for_ingress(q)][t]))));
                     }
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "sb_admit_in_from_has_enq_q%u_t%u_k%u",
+                             q,
+                             t,
+                             k);
+                    // Ingress request is driven by actual packet presence on enqs[0].
+                    new_constr_map.insert(
+                        named_constr(constr_name,
+                                     implies(q_active, admit_in_[q][t][k] == has_enq)));
 
                     expr_vector route_cases(net_ctx.z3_ctx());
                     expr any_admit_e = bool0;
@@ -815,7 +871,6 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 new_constr_map.insert(
                     named_constr(constr_name,
                                  headroom_pool_occ_[q][t][k] <= (int) headroom_pool_cap_cnt));
-
             }
 
             for (unsigned int e = 0; e < eg_cnt; e++) {
@@ -830,7 +885,6 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
                 new_constr_map.insert(named_constr(constr_name,
                                                    egress_lossless_pool_occ_[e][t][k] <=
                                                        (int) egress_lossless_pool_cap_cnt));
-
             }
 
             snprintf(constr_name, sizeof(constr_name), "sb_ing_used_sum_t%u_k%u", t, k);
@@ -900,11 +954,11 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
 
                 snprintf(constr_name, sizeof(constr_name), "sb_hdr_pos_step_q%u_t%u_k%u", q, t, k);
                 // Headroom ledger transition applies alloc/release delta across one micro-step.
-                new_constr_map.insert(named_constr(constr_name,
-                                                   headroom_pool_occ_[q][t][k + 1] ==
-                                                       headroom_pool_occ_[q][t][k] +
-                                                           b2i(alloc_hdr_[q][t][k]) -
-                                                           release_hdr_delta));
+                new_constr_map.insert(
+                    named_constr(constr_name,
+                                 headroom_pool_occ_[q][t][k + 1] == headroom_pool_occ_[q][t][k] +
+                                                                        b2i(alloc_hdr_[q][t][k]) -
+                                                                        release_hdr_delta));
             }
 
             for (unsigned int e = 0; e < eg_cnt; e++) {
@@ -1081,6 +1135,7 @@ void SharedBufferPoint::add_micro_step_constrs(map<string, expr>& new_constr_map
 
 void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_constr_map) {
     const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int sender_cnt = (unsigned int) sb_info.ingress_upstream_sender.size();
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
     const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
     const unsigned int ingress_pool_cap_cnt = ingress_pool_cap();
@@ -1101,6 +1156,17 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
         snprintf(constr_name, sizeof(constr_name), "sb_paused_init_q%u", q);
         // Initial pause state is resumed (not paused).
         new_constr_map.insert(named_constr(constr_name, !paused_[q][0]));
+    }
+    for (unsigned int s = 0; s < sender_cnt; s++) {
+        snprintf(constr_name, sizeof(constr_name), "sb_ctrl_pause_rx_init_s%u", s);
+        // No control packet is received at slot 0.
+        new_constr_map.insert(named_constr(constr_name, !pause_rx_[s][0]));
+        snprintf(constr_name, sizeof(constr_name), "sb_ctrl_resume_rx_init_s%u", s);
+        // No control packet is received at slot 0.
+        new_constr_map.insert(named_constr(constr_name, !resume_rx_[s][0]));
+        snprintf(constr_name, sizeof(constr_name), "sb_upstream_paused_init_s%u", s);
+        // Upstream sender starts in resumed state.
+        new_constr_map.insert(named_constr(constr_name, !upstream_paused_[s][0]));
     }
     for (unsigned int e = 0; e < eg_cnt; e++) {
         snprintf(constr_name, sizeof(constr_name), "sb_eg_pos_init_e%u", e);
@@ -1147,10 +1213,41 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
             expr xoff_trig = in_end >= gamma_q_end;
             expr xon_trig = paused_[q][t] && (hdr_end == 0) && (in_end < gamma_q_end);
             expr paused_next = (paused_[q][t] || xoff_trig) && !xon_trig;
+            const unsigned int u = upstream_sender_for_ingress(q);
 
             snprintf(constr_name, sizeof(constr_name), "sb_paused_handoff_q%u_t%u", q, t);
             // Pause state has one-slot delay: triggers at t take effect at t+1.
             new_constr_map.insert(named_constr(constr_name, paused_[q][t + 1] == paused_next));
+            snprintf(constr_name, sizeof(constr_name), "sb_pause_tx_evt_q%u_t%u", q, t);
+            // XOFF control-frame emission event for queue q at slot t.
+            new_constr_map.insert(
+                named_constr(constr_name, pause_tx_[q][t] == (!paused_[q][t] && paused_next)));
+            snprintf(constr_name, sizeof(constr_name), "sb_resume_tx_evt_q%u_t%u", q, t);
+            // XON control-frame emission event for queue q at slot t.
+            new_constr_map.insert(
+                named_constr(constr_name, resume_tx_[q][t] == (paused_[q][t] && !paused_next)));
+            snprintf(constr_name, sizeof(constr_name), "sb_ctrl_tx_mutex_q%u_t%u", q, t);
+            // A queue cannot emit pause and resume control frames simultaneously.
+            new_constr_map.insert(
+                named_constr(constr_name, !(pause_tx_[q][t] && resume_tx_[q][t])));
+
+            snprintf(constr_name, sizeof(constr_name), "sb_ctrl_pause_delay_q%u_t%u", q, t);
+            // P2P control-link delay: pause sent by ingress q at t is received by
+            // mapped upstream sender u(q) at t+1.
+            new_constr_map.insert(
+                named_constr(constr_name, pause_rx_[u][t + 1] == pause_tx_[q][t]));
+            snprintf(constr_name, sizeof(constr_name), "sb_ctrl_resume_delay_q%u_t%u", q, t);
+            // P2P control-link delay: resume sent by ingress q at t is received by
+            // mapped upstream sender u(q) at t+1.
+            new_constr_map.insert(
+                named_constr(constr_name, resume_rx_[u][t + 1] == resume_tx_[q][t]));
+            snprintf(constr_name, sizeof(constr_name), "sb_upstream_paused_handoff_u%u_t%u", u, t);
+            // Upstream sender u pause state evolves from delayed control frames.
+            new_constr_map.insert(
+                named_constr(constr_name,
+                             upstream_paused_[u][t + 1] ==
+                                 ((upstream_paused_[u][t] || pause_rx_[u][t + 1]) &&
+                                  !resume_rx_[u][t + 1])));
         }
 
         for (unsigned int e = 0; e < eg_cnt; e++) {
@@ -1197,6 +1294,15 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
         new_constr_map.insert(named_constr(constr_name,
                                            egress_lossless_pool_total_occ_[t + 1][0] ==
                                                egress_lossless_pool_total_occ_[t][micro_steps]));
+    }
+
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        snprintf(constr_name, sizeof(constr_name), "sb_ctrl_tx_tail_pause_false_q%u", q);
+        // Last slot has no modeled next hop in this horizon, so tx event is forced false.
+        new_constr_map.insert(named_constr(constr_name, !pause_tx_[q][total_time - 1]));
+        snprintf(constr_name, sizeof(constr_name), "sb_ctrl_tx_tail_resume_false_q%u", q);
+        // Last slot has no modeled next hop in this horizon, so tx event is forced false.
+        new_constr_map.insert(named_constr(constr_name, !resume_tx_[q][total_time - 1]));
     }
 }
 
