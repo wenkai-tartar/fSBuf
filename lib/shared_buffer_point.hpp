@@ -27,8 +27,9 @@ struct SharedBufferPointInfo {
     // S_e = 1 means can dequeue every slot; S_e = 2 means at most once every 2 slots, etc.
     // If empty or out-of-range for egress e, default to 1.
     vector<unsigned int> egress_ser_factor;
-    // Control-channel upstream sender mapping for each ingress queue q.
-    vector<unsigned int> ingress_upstream_sender;
+    // If true, boundary-egress pause/resume inputs are constrained to false. If false,
+    // they remain unconstrained environment inputs.
+    bool boundary_egress_ctrl_default_false = false;
     unsigned int buffer_slot_cnt = MAX_QUEUE_SIZE;
     // Pool capacities. If 0, default to buffer_slot_cnt.
     unsigned int ingress_pool_size = 0;
@@ -48,19 +49,37 @@ protected:
 
     SharedBufferPointInfo sb_info;
     bool shared_vars_initialized_ = false;
+    bool shared_queue_domains_initialized_ = false;
+
+    // Shared-buffer queue domains are intentionally separate from ContentionPoint::in_queues /
+    // out_queues. Today they default to the CP boundary queues; later they can be retargeted to
+    // the exact queue set that participates in shared-buffer semantics.
+    vector<Queue*> sb_ingress_queues_;
+    vector<Queue*> sb_egress_queues_;
 
     // Per-slot identity state at micro-step granularity [b][t][k].
     vector<vector<vector<expr>>> buf_pkt_;   // [b][t][k] pkt
     vector<vector<vector<expr>>> buf_in_;    // [b][t][k] int
     vector<vector<vector<expr>>> buf_e_;     // [b][t][k] int
     vector<vector<vector<expr>>> buf_stamp_; // [b][t][k] int, -1 means empty
-    // k indexes micro-state snapshots within a coarse slot t.
-    vector<vector<expr>> paused_;    // [q][t] bool, effective pause state for slot t
-    vector<vector<expr>> pause_tx_;  // [q][t] bool, XOFF sent by ingress q at slot t
-    vector<vector<expr>> resume_tx_; // [q][t] bool, XON sent by ingress q at slot t
-    vector<vector<expr>> pause_rx_;  // [s][t] bool, XOFF received by upstream sender s at slot t
-    vector<vector<expr>> resume_rx_; // [s][t] bool, XON received by upstream sender s at slot t
-    vector<vector<expr>> upstream_paused_; // [s][t] bool, whether upstream sender s is paused
+    vector<vector<expr>>
+        ingress_paused_; // [q][t] bool, whether shared-buffer ingress q is paused at time t
+    vector<vector<expr>>
+        ingress_pause_tx_; // [q][t] bool, XOFF sent by shared-buffer ingress q at time t
+    vector<vector<expr>>
+        ingress_resume_tx_; // [q][t] bool, XON sent by shared-buffer ingress q at time t
+    vector<vector<expr>>
+        upstream_sender_pause_rx_; // [s][t] bool, XOFF received by abstract upstream sender s
+    vector<vector<expr>>
+        upstream_sender_resume_rx_; // [s][t] bool, XON received by abstract upstream sender s
+    vector<vector<expr>>
+        upstream_sender_paused_; // [s][t] bool, whether abstract upstream sender s is paused
+    vector<vector<expr>>
+        boundary_egress_pause_rx_; // [e][t] bool, XOFF received by shared-buffer boundary egress e
+    vector<vector<expr>>
+        boundary_egress_resume_rx_; // [e][t] bool, XON received by shared-buffer boundary egress e
+    vector<vector<expr>>
+        boundary_egress_paused_; // [e][t] bool, whether shared-buffer boundary egress e is paused
     vector<vector<vector<expr>>> ingress_pool_occ_;         // [q][t][k] int
     vector<vector<expr>> ingress_pool_total_occ_;           // [t][k] int
     vector<vector<vector<expr>>> headroom_pool_occ_;        // [q][t][k] int
@@ -92,6 +111,7 @@ protected:
     unsigned int headroom_pool_cap() const;
     unsigned int egress_lossless_pool_cap() const;
 
+    void init_shared_queue_domains();
     void init_shared_vars();
     void add_micro_step_constrs(map<string, expr>& new_constr_map);
     void add_cross_time_step_constrs(map<string, expr>& new_constr_map);
