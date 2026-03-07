@@ -1,0 +1,426 @@
+//
+//  shared_buffer_switch_qm.cpp
+//  FSB
+//
+//  Created by Wenkai Li on 3/7/26.
+//
+
+#include "shared_buffer_switch_qm.hpp"
+
+#include <cstdio>
+
+SharedBufferSwitchQM::SharedBufferSwitchQM(cid_t id,
+                                           unsigned int total_time,
+                                           vector<QueueInfo> in_queue_info,
+                                           vector<QueueInfo> out_queue_info,
+                                           SharedBufferSwitchInfo info,
+                                           NetContext& net_ctx):
+QueuingModule(id, total_time, in_queue_info, out_queue_info, net_ctx),
+sb_info_(info) {
+    init(net_ctx);
+}
+
+unsigned int SharedBufferSwitchQM::micro_step_cnt() const {
+    return (unsigned int) in_queues.size() + 1;
+}
+
+unsigned int SharedBufferSwitchQM::deq_step_idx() const {
+    if (sb_info_.timing_mode == SharedBufferSwitchInfo::TimingMode::DEQ_FIRST) return 0;
+    return (unsigned int) in_queues.size();
+}
+
+int SharedBufferSwitchQM::ingress_queue_for_step(unsigned int k) const {
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    if (sb_info_.timing_mode == SharedBufferSwitchInfo::TimingMode::DEQ_FIRST) {
+        if (k == 0 || k > in_cnt) return -1;
+        return (int) (k - 1);
+    }
+
+    if (k >= in_cnt) return -1;
+    return (int) k;
+}
+
+unsigned int SharedBufferSwitchQM::ingress_pool_cap() const {
+    if (sb_info_.ingress_pool_size > 0) return sb_info_.ingress_pool_size;
+    return sb_info_.buffer_slot_cnt;
+}
+
+unsigned int SharedBufferSwitchQM::headroom_pool_cap() const {
+    if (sb_info_.headroom_pool_size > 0) return sb_info_.headroom_pool_size;
+    return sb_info_.buffer_slot_cnt;
+}
+
+unsigned int SharedBufferSwitchQM::egress_lossless_pool_cap() const {
+    if (sb_info_.egress_lossless_pool_size > 0) return sb_info_.egress_lossless_pool_size;
+    return sb_info_.buffer_slot_cnt;
+}
+
+unsigned int SharedBufferSwitchQM::ingress_serialization_factor(unsigned int q) const {
+    if (q >= sb_info_.ingress_ser_factor.size()) return 1;
+    unsigned int f = sb_info_.ingress_ser_factor[q];
+    if (f == 0) return 1;
+    return f;
+}
+
+unsigned int SharedBufferSwitchQM::egress_serialization_factor(unsigned int e) const {
+    if (e >= sb_info_.egress_ser_factor.size()) return 1;
+    unsigned int f = sb_info_.egress_ser_factor[e];
+    if (f == 0) return 1;
+    return f;
+}
+
+const expr&
+SharedBufferSwitchQM::ingress_paused(unsigned int q, unsigned int t) const {
+    return ingress_paused_[q][t];
+}
+
+const expr&
+SharedBufferSwitchQM::slot_pkt(unsigned int b, unsigned int t, unsigned int k) const {
+    return buf_pkt_[b][t][k];
+}
+
+void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info_.buffer_slot_cnt;
+    const unsigned int micro_steps = micro_step_cnt();
+    const unsigned int k_states = micro_steps + 1;
+
+    buf_pkt_.clear();
+    buf_in_.clear();
+    buf_e_.clear();
+    buf_is_hdr_.clear();
+    buf_stamp_.clear();
+    ingress_paused_.clear();
+    ingress_pool_occ_.clear();
+    ingress_pool_total_occ_.clear();
+    headroom_pool_occ_.clear();
+    headroom_pool_total_occ_.clear();
+    egress_lossless_pool_occ_.clear();
+    egress_lossless_pool_total_occ_.clear();
+    admit_in_.clear();
+    admit_e_.clear();
+    admit_.clear();
+    alloc_in_.clear();
+    alloc_hdr_.clear();
+    alloc_eg_lossless_.clear();
+    write_slot_.clear();
+    read_slot_.clear();
+    min_stamp_e_.clear();
+    has_pkt_e_.clear();
+
+    buf_pkt_.resize(slot_cnt);
+    buf_in_.resize(slot_cnt);
+    buf_e_.resize(slot_cnt);
+    buf_is_hdr_.resize(slot_cnt);
+    buf_stamp_.resize(slot_cnt);
+    ingress_paused_.resize(in_cnt);
+    ingress_pool_occ_.resize(in_cnt);
+    ingress_pool_total_occ_.resize(total_time);
+    headroom_pool_occ_.resize(in_cnt);
+    headroom_pool_total_occ_.resize(total_time);
+    egress_lossless_pool_occ_.resize(eg_cnt);
+    egress_lossless_pool_total_occ_.resize(total_time);
+    admit_in_.resize(in_cnt);
+    admit_e_.resize(eg_cnt);
+    admit_.resize(in_cnt);
+    alloc_in_.resize(in_cnt);
+    alloc_hdr_.resize(in_cnt);
+    alloc_eg_lossless_.resize(eg_cnt);
+    write_slot_.resize(in_cnt);
+    read_slot_.resize(eg_cnt);
+    min_stamp_e_.resize(eg_cnt);
+    has_pkt_e_.resize(eg_cnt);
+
+    char vname[160];
+
+    for (unsigned int b = 0; b < slot_cnt; b++) {
+        buf_pkt_[b].resize(total_time);
+        buf_in_[b].resize(total_time);
+        buf_e_[b].resize(total_time);
+        buf_is_hdr_[b].resize(total_time);
+        buf_stamp_[b].resize(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(vname, sizeof(vname), "%s_buf_pkt[%u][%u][%u]", id.c_str(), b, t, k);
+                buf_pkt_[b][t].push_back(net_ctx.pkt_const(vname));
+                snprintf(vname, sizeof(vname), "%s_buf_in[%u][%u][%u]", id.c_str(), b, t, k);
+                buf_in_[b][t].push_back(net_ctx.int_const(vname));
+                snprintf(vname, sizeof(vname), "%s_buf_e[%u][%u][%u]", id.c_str(), b, t, k);
+                buf_e_[b][t].push_back(net_ctx.int_const(vname));
+                snprintf(vname, sizeof(vname), "%s_buf_is_hdr[%u][%u][%u]", id.c_str(), b, t, k);
+                buf_is_hdr_[b][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "%s_buf_stamp[%u][%u][%u]", id.c_str(), b, t, k);
+                buf_stamp_[b][t].push_back(net_ctx.int_const(vname));
+            }
+        }
+    }
+
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        ingress_paused_[q].reserve(total_time);
+        ingress_pool_occ_[q].resize(total_time);
+        headroom_pool_occ_[q].resize(total_time);
+        admit_in_[q].resize(total_time);
+        admit_[q].resize(total_time);
+        alloc_in_[q].resize(total_time);
+        alloc_hdr_[q].resize(total_time);
+        write_slot_[q].resize(slot_cnt);
+
+        for (unsigned int t = 0; t < total_time; t++) {
+            snprintf(vname, sizeof(vname), "%s_ingress_paused[%u][%u]", id.c_str(), q, t);
+            ingress_paused_[q].push_back(net_ctx.bool_const(vname));
+
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(vname,
+                         sizeof(vname),
+                         "%s_ingress_pool_occ[%u][%u][%u]",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                ingress_pool_occ_[q][t].push_back(net_ctx.int_const(vname));
+                snprintf(vname,
+                         sizeof(vname),
+                         "%s_headroom_pool_occ[%u][%u][%u]",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                headroom_pool_occ_[q][t].push_back(net_ctx.int_const(vname));
+            }
+
+            for (unsigned int k = 0; k < micro_steps; k++) {
+                snprintf(vname, sizeof(vname), "%s_admit_in[%u][%u][%u]", id.c_str(), q, t, k);
+                admit_in_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "%s_admit[%u][%u][%u]", id.c_str(), q, t, k);
+                admit_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "%s_alloc_in[%u][%u][%u]", id.c_str(), q, t, k);
+                alloc_in_[q][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname, sizeof(vname), "%s_alloc_hdr[%u][%u][%u]", id.c_str(), q, t, k);
+                alloc_hdr_[q][t].push_back(net_ctx.bool_const(vname));
+            }
+        }
+
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            write_slot_[q][b].resize(total_time);
+            for (unsigned int t = 0; t < total_time; t++) {
+                for (unsigned int k = 0; k < micro_steps; k++) {
+                    snprintf(
+                        vname, sizeof(vname), "%s_write_slot[%u][%u][%u][%u]", id.c_str(), q, b, t, k);
+                    write_slot_[q][b][t].push_back(net_ctx.bool_const(vname));
+                }
+            }
+        }
+    }
+
+    for (unsigned int e = 0; e < eg_cnt; e++) {
+        egress_lossless_pool_occ_[e].resize(total_time);
+        admit_e_[e].resize(total_time);
+        alloc_eg_lossless_[e].resize(total_time);
+        min_stamp_e_[e].reserve(total_time);
+        has_pkt_e_[e].reserve(total_time);
+        read_slot_[e].resize(slot_cnt);
+
+        for (unsigned int t = 0; t < total_time; t++) {
+            snprintf(vname, sizeof(vname), "%s_min_stamp_e[%u][%u]", id.c_str(), e, t);
+            min_stamp_e_[e].push_back(net_ctx.int_const(vname));
+            snprintf(vname, sizeof(vname), "%s_has_pkt_e[%u][%u]", id.c_str(), e, t);
+            has_pkt_e_[e].push_back(net_ctx.bool_const(vname));
+
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(vname,
+                         sizeof(vname),
+                         "%s_egress_lossless_pool_occ[%u][%u][%u]",
+                         id.c_str(),
+                         e,
+                         t,
+                         k);
+                egress_lossless_pool_occ_[e][t].push_back(net_ctx.int_const(vname));
+            }
+
+            for (unsigned int k = 0; k < micro_steps; k++) {
+                snprintf(vname, sizeof(vname), "%s_admit_e[%u][%u][%u]", id.c_str(), e, t, k);
+                admit_e_[e][t].push_back(net_ctx.bool_const(vname));
+                snprintf(vname,
+                         sizeof(vname),
+                         "%s_alloc_eg_lossless[%u][%u][%u]",
+                         id.c_str(),
+                         e,
+                         t,
+                         k);
+                alloc_eg_lossless_[e][t].push_back(net_ctx.bool_const(vname));
+            }
+        }
+
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            read_slot_[e][b].resize(total_time);
+            for (unsigned int t = 0; t < total_time; t++) {
+                for (unsigned int k = 0; k < micro_steps; k++) {
+                    snprintf(
+                        vname, sizeof(vname), "%s_read_slot[%u][%u][%u][%u]", id.c_str(), e, b, t, k);
+                    read_slot_[e][b][t].push_back(net_ctx.bool_const(vname));
+                }
+            }
+        }
+    }
+
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int k = 0; k < k_states; k++) {
+            snprintf(vname, sizeof(vname), "%s_ingress_pool_total_occ[%u][%u]", id.c_str(), t, k);
+            ingress_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
+            snprintf(vname, sizeof(vname), "%s_headroom_pool_total_occ[%u][%u]", id.c_str(), t, k);
+            headroom_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
+            snprintf(vname,
+                     sizeof(vname),
+                     "%s_egress_lossless_pool_total_occ[%u][%u]",
+                     id.c_str(),
+                     t,
+                     k);
+            egress_lossless_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
+        }
+    }
+}
+
+void SharedBufferSwitchQM::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
+    add_scaffold_constrs(net_ctx, constr_map);
+}
+
+void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
+                                                map<string, expr>& constr_map) {
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info_.buffer_slot_cnt;
+    const unsigned int micro_steps = micro_step_cnt();
+    const unsigned int k_states = micro_steps + 1;
+    char constr_name[180];
+
+    // Scaffold only: keep the new QM safe and deterministic until shared-buffer
+    // semantics are migrated out of SharedBufferPoint.
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int q = 0; q < in_cnt; q++) {
+            snprintf(constr_name, sizeof(constr_name), "%s_input_deq_zero_q%u_t%u", id.c_str(), q, t);
+            constr_map.insert(named_constr(constr_name, in_queues[q]->deq_cnt(t) == 0));
+
+            snprintf(constr_name, sizeof(constr_name), "%s_ingress_paused_false_q%u_t%u", id.c_str(), q, t);
+            constr_map.insert(named_constr(constr_name, !ingress_paused_[q][t]));
+
+            for (unsigned int k = 0; k < micro_steps; k++) {
+                snprintf(constr_name, sizeof(constr_name), "%s_admit_in_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                constr_map.insert(named_constr(constr_name, !admit_in_[q][t][k]));
+                snprintf(constr_name, sizeof(constr_name), "%s_admit_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
+                snprintf(constr_name, sizeof(constr_name), "%s_alloc_in_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                constr_map.insert(named_constr(constr_name, !alloc_in_[q][t][k]));
+                snprintf(constr_name, sizeof(constr_name), "%s_alloc_hdr_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
+            }
+
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(constr_name, sizeof(constr_name), "%s_ingress_pool_zero_q%u_t%u_k%u", id.c_str(), q, t, k);
+                constr_map.insert(named_constr(constr_name, ingress_pool_occ_[q][t][k] == 0));
+                snprintf(constr_name, sizeof(constr_name), "%s_headroom_pool_zero_q%u_t%u_k%u", id.c_str(), q, t, k);
+                constr_map.insert(named_constr(constr_name, headroom_pool_occ_[q][t][k] == 0));
+            }
+        }
+
+        for (unsigned int e = 0; e < eg_cnt; e++) {
+            for (unsigned int k = 0; k < micro_steps; k++) {
+                snprintf(constr_name, sizeof(constr_name), "%s_admit_e_false_e%u_t%u_k%u", id.c_str(), e, t, k);
+                constr_map.insert(named_constr(constr_name, !admit_e_[e][t][k]));
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_alloc_eg_lossless_false_e%u_t%u_k%u",
+                         id.c_str(),
+                         e,
+                         t,
+                         k);
+                constr_map.insert(named_constr(constr_name, !alloc_eg_lossless_[e][t][k]));
+            }
+
+            snprintf(constr_name, sizeof(constr_name), "%s_min_stamp_e_empty_e%u_t%u", id.c_str(), e, t);
+            constr_map.insert(named_constr(constr_name, min_stamp_e_[e][t] == -1));
+            snprintf(constr_name, sizeof(constr_name), "%s_has_pkt_e_false_e%u_t%u", id.c_str(), e, t);
+            constr_map.insert(named_constr(constr_name, !has_pkt_e_[e][t]));
+
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_egress_lossless_pool_zero_e%u_t%u_k%u",
+                         id.c_str(),
+                         e,
+                         t,
+                         k);
+                constr_map.insert(named_constr(constr_name, egress_lossless_pool_occ_[e][t][k] == 0));
+            }
+
+            Queue* outq = out_queues[e];
+            for (unsigned int i = 0; i < outq->max_enq(); i++) {
+                snprintf(constr_name, sizeof(constr_name), "%s_output_null_e%u_i%u_t%u", id.c_str(), e, i, t);
+                constr_map.insert(named_constr(constr_name, outq->enqs(i)[t] == net_ctx.null_pkt()));
+            }
+        }
+
+        for (unsigned int k = 0; k < k_states; k++) {
+            snprintf(constr_name, sizeof(constr_name), "%s_ingress_pool_total_zero_t%u_k%u", id.c_str(), t, k);
+            constr_map.insert(named_constr(constr_name, ingress_pool_total_occ_[t][k] == 0));
+            snprintf(constr_name, sizeof(constr_name), "%s_headroom_pool_total_zero_t%u_k%u", id.c_str(), t, k);
+            constr_map.insert(named_constr(constr_name, headroom_pool_total_occ_[t][k] == 0));
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_egress_lossless_pool_total_zero_t%u_k%u", id.c_str(), t, k);
+            constr_map.insert(named_constr(constr_name, egress_lossless_pool_total_occ_[t][k] == 0));
+        }
+    }
+
+    for (unsigned int b = 0; b < slot_cnt; b++) {
+        for (unsigned int t = 0; t < total_time; t++) {
+            for (unsigned int k = 0; k < k_states; k++) {
+                snprintf(constr_name, sizeof(constr_name), "%s_buf_pkt_null_b%u_t%u_k%u", id.c_str(), b, t, k);
+                constr_map.insert(named_constr(constr_name, buf_pkt_[b][t][k] == net_ctx.null_pkt()));
+                snprintf(constr_name, sizeof(constr_name), "%s_buf_in_empty_b%u_t%u_k%u", id.c_str(), b, t, k);
+                constr_map.insert(named_constr(constr_name, buf_in_[b][t][k] == -1));
+                snprintf(constr_name, sizeof(constr_name), "%s_buf_e_empty_b%u_t%u_k%u", id.c_str(), b, t, k);
+                constr_map.insert(named_constr(constr_name, buf_e_[b][t][k] == -1));
+                snprintf(constr_name, sizeof(constr_name), "%s_buf_is_hdr_false_b%u_t%u_k%u", id.c_str(), b, t, k);
+                constr_map.insert(named_constr(constr_name, !buf_is_hdr_[b][t][k]));
+                snprintf(constr_name, sizeof(constr_name), "%s_buf_stamp_empty_b%u_t%u_k%u", id.c_str(), b, t, k);
+                constr_map.insert(named_constr(constr_name, buf_stamp_[b][t][k] == -1));
+            }
+        }
+    }
+
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            for (unsigned int t = 0; t < total_time; t++) {
+                for (unsigned int k = 0; k < micro_steps; k++) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_write_slot_false_q%u_b%u_t%u_k%u",
+                             id.c_str(),
+                             q,
+                             b,
+                             t,
+                             k);
+                    constr_map.insert(named_constr(constr_name, !write_slot_[q][b][t][k]));
+                }
+            }
+        }
+    }
+
+    for (unsigned int e = 0; e < eg_cnt; e++) {
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            for (unsigned int t = 0; t < total_time; t++) {
+                for (unsigned int k = 0; k < micro_steps; k++) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_read_slot_false_e%u_b%u_t%u_k%u",
+                             id.c_str(),
+                             e,
+                             b,
+                             t,
+                             k);
+                    constr_map.insert(named_constr(constr_name, !read_slot_[e][b][t][k]));
+                }
+            }
+        }
+    }
+}
