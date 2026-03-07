@@ -495,6 +495,21 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
     }
 
     for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int k = 0; k < micro_steps; k++) {
+            if (k == deq_k) continue;
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_read_slot_non_deq_false_b%u_t%u_k%u",
+                         id.c_str(),
+                         b,
+                         t,
+                         k);
+                // Slot reads are only allowed in the dedicated dequeue micro-step.
+                constr_map.insert(named_constr(constr_name, !read_slot_[b][t][k]));
+            }
+        }
+
         for (unsigned int q = 0; q < in_cnt; q++) {
             SBQueue* inq = ingress_sb_queue(q);
 
