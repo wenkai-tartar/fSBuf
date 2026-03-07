@@ -16,6 +16,11 @@ fperf currently runs on Z3 v4.8.11 [link](https://github.com/Z3Prover/z3/release
 	- Or override: `make Z3_ROOT=/path/to/z3`
 3. Run tests with:
 	- `make test`
+4. Enable solver/model debug output with:
+	- `make clean && make test DEBUG=1`
+	- This adds `-DDEBUG` at build time and enables fperf's built-in debug prints from the solver path
+	- On `SAT`, fperf prints the model/state dump
+	- On `UNSAT`, fperf prints the unsat core
 
 ### Branch Regression Script (main vs shared-buffer)
 Use `scripts/branch_regression.sh` to compare two branches in isolated export directories.

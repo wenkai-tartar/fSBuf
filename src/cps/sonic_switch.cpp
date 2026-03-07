@@ -83,8 +83,6 @@ void SONiCSwitch::add_metrics() {
 }
 
 string SONiCSwitch::cp_model_str(model& m, NetContext& net_ctx, unsigned int t) {
-    (void) net_ctx;
-
     stringstream ss;
     ss << "ports=" << port_cnt_ << ", ingress_queues=" << ingress_queue_cnt_ << endl;
     ss << "qid: cenq, demand" << endl;
@@ -93,6 +91,11 @@ string SONiCSwitch::cp_model_str(model& m, NetContext& net_ctx, unsigned int t) 
         ss << queue->get_id() << ": " << m.eval(cenq_[q]->val(t).second).get_numeral_int();
         ss << ", " << m.eval(demand_[q]->val(t).second).get_numeral_int();
         ss << endl;
+    }
+
+    SharedBufferSwitchQM* sb_qm = dynamic_cast<SharedBufferSwitchQM*>(id_to_qm["SB_CORE"]);
+    if (sb_qm != nullptr) {
+        ss << sb_qm->debug_model_str(m, net_ctx, t);
     }
     return ss.str();
 }

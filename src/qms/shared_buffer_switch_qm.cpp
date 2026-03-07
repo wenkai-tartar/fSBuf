@@ -8,6 +8,7 @@
 #include "shared_buffer_switch_qm.hpp"
 
 #include <cstdio>
+#include <sstream>
 #include <stdexcept>
 
 SharedBufferSwitchQM::SharedBufferSwitchQM(cid_t id,
@@ -92,6 +93,136 @@ SBQueue* SharedBufferSwitchQM::egress_sb_queue(unsigned int e) {
         throw runtime_error("SharedBufferSwitchQM egress queue is not an SBQueue");
     }
     return sbq;
+}
+
+const SBQueue* SharedBufferSwitchQM::ingress_sb_queue(unsigned int q) const {
+    const SBQueue* sbq = dynamic_cast<const SBQueue*>(in_queues[q]);
+    if (sbq == nullptr) {
+        throw runtime_error("SharedBufferSwitchQM ingress queue is not an SBQueue");
+    }
+    return sbq;
+}
+
+const SBQueue* SharedBufferSwitchQM::egress_sb_queue(unsigned int e) const {
+    const SBQueue* sbq = dynamic_cast<const SBQueue*>(out_queues[e]);
+    if (sbq == nullptr) {
+        throw runtime_error("SharedBufferSwitchQM egress queue is not an SBQueue");
+    }
+    return sbq;
+}
+
+string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsigned int t) const {
+    stringstream ss;
+    const unsigned int in_cnt = (unsigned int) in_queues.size();
+    const unsigned int eg_cnt = (unsigned int) out_queues.size();
+    const unsigned int slot_cnt = sb_info_.buffer_slot_cnt;
+    const unsigned int micro_steps = micro_step_cnt();
+    const unsigned int k_states = micro_step_cnt() + 1;
+
+    auto eval_bool = [&](const expr& e) { return m.eval(e, true).is_true(); };
+    auto eval_int = [&](const expr& e) {
+        expr v = m.eval(e, true);
+        if (v.is_numeral()) return v.get_numeral_int();
+        return 0;
+    };
+    auto pkt_str = [&](const expr& pkt) {
+        if (!eval_bool(net_ctx.pkt2val(pkt))) return string("x");
+
+        stringstream ps;
+        ps << "[";
+        expr meta1 = m.eval(net_ctx.pkt2meta1(pkt), true);
+        if (meta1.is_numeral()) ps << meta1.get_numeral_int();
+        else ps << "-";
+        ps << " ";
+        expr meta2 = m.eval(net_ctx.pkt2meta2(pkt), true);
+        if (meta2.is_numeral()) ps << meta2.get_numeral_int();
+        else ps << "-";
+        ps << "]";
+        return ps.str();
+    };
+
+    ss << "shared-buffer-switch " << id << endl;
+    ss << "  ingress_ctrl:";
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        const SBQueue* inq = ingress_sb_queue(q);
+        ss << " q" << q << "(paused=" << (eval_bool(ingress_paused_[q][t]) ? 1 : 0)
+           << ", txP=" << (eval_bool(inq->pause_tx(t)) ? 1 : 0)
+           << ", txR=" << (eval_bool(inq->resume_tx(t)) ? 1 : 0)
+           << ", rxP=" << (eval_bool(inq->pause_rx(t)) ? 1 : 0)
+           << ", rxR=" << (eval_bool(inq->resume_rx(t)) ? 1 : 0)
+           << ", sender_paused=" << (eval_bool(inq->sender_paused(t)) ? 1 : 0) << ")";
+    }
+    ss << endl;
+
+    ss << "  egress_ctrl:";
+    for (unsigned int e = 0; e < eg_cnt; e++) {
+        const SBQueue* outq = egress_sb_queue(e);
+        ss << " e" << e << "(sender_paused=" << (eval_bool(outq->sender_paused(t)) ? 1 : 0)
+           << ", has_pkt=" << (eval_bool(has_pkt_e_[e][t]) ? 1 : 0)
+           << ", min_stamp=" << eval_int(min_stamp_e_[e][t]) << ")";
+    }
+    ss << endl;
+
+    for (unsigned int k = 0; k < k_states; k++) {
+        ss << "  k=" << k
+           << " totals(in=" << eval_int(ingress_pool_total_occ_[t][k])
+           << ", hdr=" << eval_int(headroom_pool_total_occ_[t][k])
+           << ", eg=" << eval_int(egress_lossless_pool_total_occ_[t][k]) << ")" << endl;
+
+        ss << "    ingress_occ:";
+        for (unsigned int q = 0; q < in_cnt; q++) {
+            ss << " q" << q << "=" << eval_int(ingress_pool_occ_[q][t][k]);
+        }
+        ss << endl;
+
+        ss << "    headroom_occ:";
+        for (unsigned int q = 0; q < in_cnt; q++) {
+            ss << " q" << q << "=" << eval_int(headroom_pool_occ_[q][t][k]);
+        }
+        ss << endl;
+
+        ss << "    egress_occ:";
+        for (unsigned int e = 0; e < eg_cnt; e++) {
+            ss << " e" << e << "=" << eval_int(egress_lossless_pool_occ_[e][t][k]);
+        }
+        ss << endl;
+
+        if (k < micro_steps) {
+            const int active_q = ingress_queue_for_step(k);
+            ss << "    actions:";
+            if (active_q >= 0) ss << " active_q=" << active_q;
+            else ss << " deq_step";
+            for (unsigned int q = 0; q < in_cnt; q++) {
+                ss << " q" << q << "(ain=" << (eval_bool(admit_in_[q][t][k]) ? 1 : 0)
+                   << ", a=" << (eval_bool(admit_[q][t][k]) ? 1 : 0)
+                   << ", in=" << (eval_bool(alloc_in_[q][t][k]) ? 1 : 0)
+                   << ", hdr=" << (eval_bool(alloc_hdr_[q][t][k]) ? 1 : 0) << ")";
+            }
+            for (unsigned int e = 0; e < eg_cnt; e++) {
+                ss << " e" << e << "(ae=" << (eval_bool(admit_e_[e][t][k]) ? 1 : 0)
+                   << ", alloc=" << (eval_bool(alloc_eg_lossless_[e][t][k]) ? 1 : 0) << ")";
+            }
+            ss << endl;
+        }
+
+        ss << "    slots:" << endl;
+        for (unsigned int b = 0; b < slot_cnt; b++) {
+            ss << "      b" << b << ": " << pkt_str(buf_pkt_[b][t][k])
+               << " in=" << eval_int(buf_in_[b][t][k])
+               << " e=" << eval_int(buf_e_[b][t][k])
+               << " st=" << eval_int(buf_stamp_[b][t][k]);
+
+            if (k < micro_steps) {
+                if (eval_bool(read_slot_[b][t][k])) ss << " R";
+                for (unsigned int q = 0; q < in_cnt; q++) {
+                    if (eval_bool(write_slot_[q][b][t][k])) ss << " Wq" << q;
+                }
+            }
+            ss << endl;
+        }
+    }
+
+    return ss.str();
 }
 
 void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {

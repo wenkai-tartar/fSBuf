@@ -1,5 +1,8 @@
 CXX      := g++
 CXXFLAGS := -pedantic-errors -Wno-sign-compare -Wno-unknown-pragmas -Wall -Wextra -Werror -std=c++17 -O3
+ifeq ($(DEBUG),1)
+CXXFLAGS += -DDEBUG
+endif
 Z3_ROOT  ?= /opt/z3-4.8.11
 LDFLAGS  := -L$(Z3_ROOT)/lib -Wl,-rpath,$(Z3_ROOT)/lib -L/usr/lib -L/usr/local/lib/ -lstdc++ -lm -lz3
 BUILD    := ./build

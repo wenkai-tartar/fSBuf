@@ -49,12 +49,15 @@ public:
 
     const expr& ingress_paused(unsigned int q, unsigned int t) const;
     const expr& slot_pkt(unsigned int b, unsigned int t, unsigned int k) const;
+    string debug_model_str(model& m, NetContext& net_ctx, unsigned int t) const;
 
 private:
     void add_proc_vars(NetContext& net_ctx) override;
     void add_scaffold_constrs(NetContext& net_ctx, map<string, expr>& constr_map);
     SBQueue* ingress_sb_queue(unsigned int q);
     SBQueue* egress_sb_queue(unsigned int e);
+    const SBQueue* ingress_sb_queue(unsigned int q) const;
+    const SBQueue* egress_sb_queue(unsigned int e) const;
 
     SharedBufferSwitchInfo sb_info_;
 
