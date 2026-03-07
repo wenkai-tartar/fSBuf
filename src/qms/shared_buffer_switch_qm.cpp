@@ -370,23 +370,26 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
 
             for (unsigned int k = 0; k < micro_steps; k++) {
                 const int active_q = ingress_queue_for_step(k);
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "%s_admit_in_false_q%u_t%u_k%u",
-                         id.c_str(),
-                         q,
-                         t,
-                         k);
-                constr_map.insert(named_constr(constr_name, !admit_in_[q][t][k]));
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "%s_admit_false_q%u_t%u_k%u",
-                         id.c_str(),
-                         q,
-                         t,
-                         k);
-                constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
                 if (active_q < 0 || (unsigned int) active_q != q) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_admit_in_false_q%u_t%u_k%u",
+                             id.c_str(),
+                             q,
+                             t,
+                             k);
+                    // Only the scheduled ingress can issue an ingress-side request in this
+                    // micro-step.
+                    constr_map.insert(named_constr(constr_name, !admit_in_[q][t][k]));
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_admit_false_q%u_t%u_k%u",
+                             id.c_str(),
+                             q,
+                             t,
+                             k);
+                    // Only the scheduled ingress can be admitted in this micro-step.
+                    constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
                     snprintf(constr_name,
                              sizeof(constr_name),
                              "%s_alloc_in_false_q%u_t%u_k%u",
@@ -407,6 +410,71 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                     constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
                     continue;
                 }
+
+                expr pkt = inq->enqs(0)[t];
+                expr has_enq = net_ctx.pkt2val(pkt);
+                expr dst_eg = net_ctx.pkt2meta1(pkt) % net_ctx.int_val((int) eg_cnt);
+                expr has_ing_credit = ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt;
+                expr has_hdr_credit = headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt;
+                expr ingress_can_admit =
+                    (!ingress_paused_[q][t] && has_ing_credit) ||
+                    (ingress_paused_[q][t] && has_hdr_credit);
+                expr any_admit_e = net_ctx.bool_val(false);
+                expr_vector route_cases(net_ctx.z3_ctx());
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_admit_in_from_has_enq_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                // Ingress-side admit is granted exactly when a packet is present and the local
+                // ingress/headroom accounting path has available credit.
+                constr_map.insert(
+                    named_constr(constr_name, admit_in_[q][t][k] == (has_enq && ingress_can_admit)));
+
+                for (unsigned int e = 0; e < eg_cnt; e++) {
+                    expr route_to_e = dst_eg == net_ctx.int_val((int) e);
+                    any_admit_e = any_admit_e || admit_e_[e][t][k];
+                    route_cases.push_back(
+                        implies(has_enq && route_to_e,
+                                admit_[q][t][k] == (admit_in_[q][t][k] && admit_e_[e][t][k])));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_admit_e_non_route_false_q%u_e%u_t%u_k%u",
+                             id.c_str(),
+                             q,
+                             e,
+                             t,
+                             k);
+                    // Only the routed egress may keep its admission gate enabled for this packet.
+                    constr_map.insert(named_constr(
+                        constr_name, implies(!has_enq || !route_to_e, !admit_e_[e][t][k])));
+                }
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_admit_route_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                // On the routed egress, final admit follows the ingress request and that routed
+                // egress gate.
+                constr_map.insert(named_constr(constr_name, mk_and(route_cases)));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_admit_requires_in_and_eg_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                // Final admit requires both ingress-side admit and an enabled routed egress gate.
+                constr_map.insert(
+                    named_constr(constr_name, admit_[q][t][k] == (admit_in_[q][t][k] && any_admit_e)));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -517,14 +585,17 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             SBQueue* out_sbq = egress_sb_queue(e);
 
             for (unsigned int k = 0; k < micro_steps; k++) {
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "%s_admit_e_false_e%u_t%u_k%u",
-                         id.c_str(),
-                         e,
-                         t,
-                         k);
-                constr_map.insert(named_constr(constr_name, !admit_e_[e][t][k]));
+                if (k == deq_k) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_admit_e_false_e%u_t%u_k%u",
+                             id.c_str(),
+                             e,
+                             t,
+                             k);
+                    // The dedicated dequeue micro-step does not admit new arrivals.
+                    constr_map.insert(named_constr(constr_name, !admit_e_[e][t][k]));
+                }
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_alloc_eg_lossless_false_e%u_t%u_k%u",
