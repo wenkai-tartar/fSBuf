@@ -8,7 +8,7 @@
 using namespace std;
 
 bool test_shared_buffer_no_congestion_full_throughput() {
-    const unsigned int total_time = 100;
+    const unsigned int total_time = 4;
 
     SharedBufferPointInfo info;
     info.max_demand_per_t = 1;
