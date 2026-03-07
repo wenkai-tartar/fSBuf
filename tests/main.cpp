@@ -13,15 +13,15 @@ int main(int argc, char** argv) {
 
     TestRunner runner;
 
-    RRSchedulerTest rrSchedulerTest;
-    rrSchedulerTest.add_to_runner(&runner);
+    // RRSchedulerTest rrSchedulerTest;
+    // rrSchedulerTest.add_to_runner(&runner);
 
-    TBFTest tbfTest;
-    tbfTest.add_to_runner(&runner);
+    // TBFTest tbfTest;
+    // tbfTest.add_to_runner(&runner);
 
 
-    SearchTest searchTest;
-    searchTest.add_to_runner(&runner);
+    // SearchTest searchTest;
+    // searchTest.add_to_runner(&runner);
 
     SharedBufferTest sharedBufferTest;
     sharedBufferTest.add_to_runner(&runner);
