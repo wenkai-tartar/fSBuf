@@ -47,74 +47,9 @@ protected:
     void add_out_queue_constrs() override;
     m_val_expr_t metric_val_expr(metric_t metric, unsigned int q, unsigned t) override;
 
-    SharedBufferPointInfo sb_info;
-    bool shared_vars_initialized_ = false;
-    bool shared_queue_domains_initialized_ = false;
-
-    // Shared-buffer queue domains are intentionally separate from ContentionPoint::in_queues /
-    // out_queues. Today they default to the CP boundary queues; later they can be retargeted to
-    // the exact queue set that participates in shared-buffer semantics.
-    vector<Queue*> sb_ingress_queues_;
-    vector<Queue*> sb_egress_queues_;
-
-    // Per-slot identity state at micro-step granularity [b][t][k].
-    vector<vector<vector<expr>>> buf_pkt_;   // [b][t][k] pkt
-    vector<vector<vector<expr>>> buf_in_;    // [b][t][k] int
-    vector<vector<vector<expr>>> buf_e_;     // [b][t][k] int
-    vector<vector<vector<expr>>> buf_stamp_; // [b][t][k] int, -1 means empty
-    vector<vector<expr>>
-        ingress_paused_; // [q][t] bool, whether shared-buffer ingress q is paused at time t
-    vector<vector<expr>>
-        ingress_pause_tx_; // [q][t] bool, XOFF sent by shared-buffer ingress q at time t
-    vector<vector<expr>>
-        ingress_resume_tx_; // [q][t] bool, XON sent by shared-buffer ingress q at time t
-    vector<vector<expr>>
-        upstream_sender_pause_rx_; // [s][t] bool, XOFF received by abstract upstream sender s
-    vector<vector<expr>>
-        upstream_sender_resume_rx_; // [s][t] bool, XON received by abstract upstream sender s
-    vector<vector<expr>>
-        upstream_sender_paused_; // [s][t] bool, whether abstract upstream sender s is paused
-    vector<vector<expr>>
-        boundary_egress_pause_rx_; // [e][t] bool, XOFF received by shared-buffer boundary egress e
-    vector<vector<expr>>
-        boundary_egress_resume_rx_; // [e][t] bool, XON received by shared-buffer boundary egress e
-    vector<vector<expr>>
-        boundary_egress_paused_; // [e][t] bool, whether shared-buffer boundary egress e is paused
-    vector<vector<vector<expr>>> ingress_pool_occ_;         // [q][t][k] int
-    vector<vector<expr>> ingress_pool_total_occ_;           // [t][k] int
-    vector<vector<vector<expr>>> headroom_pool_occ_;        // [q][t][k] int
-    vector<vector<expr>> headroom_pool_total_occ_;          // [t][k] int
-    vector<vector<vector<expr>>> egress_lossless_pool_occ_; // [e][t][k] int
-    vector<vector<expr>> egress_lossless_pool_total_occ_;   // [t][k] int
-
-    // Action variables upgraded to micro-step granularity [..][t][k].
-    vector<vector<vector<expr>>> admit_in_; // [q][t][k] bool
-    vector<vector<vector<expr>>> admit_e_;  // [e][t][k] bool
-    vector<vector<vector<expr>>> admit_;    // [q][t][k] bool
-    // vector<vector<vector<expr>>> drop_or_block_; // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_in_;           // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_hdr_;          // [q][t][k] bool
-    vector<vector<vector<expr>>> alloc_eg_lossless_;  // [e][t][k] bool
-    vector<vector<vector<vector<expr>>>> write_slot_; // [q][b][t][k] bool
-    vector<vector<vector<vector<expr>>>> read_slot_;  // [e][b][t][k] bool
-    vector<vector<expr>> min_stamp_e_; // [e][t] int, HOL timestamp for egress e at deq step
-    vector<vector<expr>>
-        has_pkt_e_; // [e][t] bool, whether egress e has any readable slot at deq step
-
-    unsigned int micro_step_cnt() const;
-    unsigned int deq_step_idx() const;
-    int ingress_queue_for_step(unsigned int k) const;
-    unsigned int ingress_pool_cap() const;
     unsigned int ingress_serialization_factor(unsigned int q) const;
-    unsigned int egress_serialization_factor(unsigned int e) const;
-    unsigned int upstream_sender_for_ingress(unsigned int q) const;
-    unsigned int headroom_pool_cap() const;
-    unsigned int egress_lossless_pool_cap() const;
 
-    void init_shared_queue_domains();
-    void init_shared_vars();
-    void add_micro_step_constrs(map<string, expr>& new_constr_map);
-    void add_cross_time_step_constrs(map<string, expr>& new_constr_map);
+    SharedBufferPointInfo sb_info;
 };
 
 #endif /* shared_buffer_point_hpp */
