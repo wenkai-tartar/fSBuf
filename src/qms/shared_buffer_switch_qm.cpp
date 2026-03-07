@@ -716,20 +716,134 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 }
             }
 
-            snprintf(constr_name, sizeof(constr_name), "%s_min_stamp_e_empty_e%u_t%u", id.c_str(), e, t);
-            constr_map.insert(named_constr(constr_name, min_stamp_e_[e][t] == -1));
-            snprintf(constr_name, sizeof(constr_name), "%s_has_pkt_e_false_e%u_t%u", id.c_str(), e, t);
-            constr_map.insert(named_constr(constr_name, !has_pkt_e_[e][t]));
-
             Queue* outq = out_queues[e];
-            snprintf(constr_name, sizeof(constr_name), "%s_egress_read_sender_paused_e%u_t%u", id.c_str(), e, t);
-            // Scaffold path: if the downstream-facing SBQueue reports paused, this egress cannot
-            // perform any dequeue/send action in slot t.
+            expr reads_this_e_t_sum = int0;
+            expr_vector cand_vec(net_ctx.z3_ctx());
+            expr_vector min_witness_vec(net_ctx.z3_ctx());
+
+            for (unsigned int b = 0; b < slot_cnt; b++) {
+                expr read_b = read_slot_[b][t][deq_k];
+                expr cand =
+                    net_ctx.pkt2val(buf_pkt_[b][t][deq_k]) && (buf_e_[b][t][deq_k] == (int) e);
+                expr read_by_e = read_b && (buf_e_[b][t][deq_k] == (int) e);
+
+                cand_vec.push_back(cand);
+                min_witness_vec.push_back(cand && (buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t]));
+                reads_this_e_t_sum = reads_this_e_t_sum + b2i(read_by_e);
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_read_requires_nonempty_b%u_t%u_k%u",
+                         id.c_str(),
+                         b,
+                         t,
+                         deq_k);
+                // Reading a slot is only allowed when the slot is currently occupied.
+                constr_map.insert(named_constr(
+                    constr_name,
+                    implies(read_b, net_ctx.pkt2val(buf_pkt_[b][t][deq_k]))));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_read_requires_hol_e%u_b%u_t%u_k%u",
+                         id.c_str(),
+                         e,
+                         b,
+                         t,
+                         deq_k);
+                // If egress e reads slot b, that slot must be e's HOL packet.
+                constr_map.insert(named_constr(
+                    constr_name,
+                    implies(read_by_e, buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t])));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_min_stamp_lb_e%u_b%u_t%u_k%u",
+                         id.c_str(),
+                         e,
+                         b,
+                         t,
+                         deq_k);
+                // min_stamp_e is a lower bound on every candidate packet timestamp for egress e.
+                constr_map.insert(named_constr(
+                    constr_name,
+                    implies(cand, buf_stamp_[b][t][deq_k] >= min_stamp_e_[e][t])));
+            }
+
+            snprintf(constr_name, sizeof(constr_name), "%s_has_pkt_e_def_e%u_t%u", id.c_str(), e, t);
+            // has_pkt_e is true iff egress e has at least one candidate packet at the dequeue
+            // micro-step.
+            constr_map.insert(named_constr(constr_name, has_pkt_e_[e][t] == mk_or(cand_vec)));
+
+            snprintf(constr_name, sizeof(constr_name), "%s_min_stamp_empty_e%u_t%u", id.c_str(), e, t);
+            // If no candidate exists for egress e, min_stamp_e is set to -1.
             constr_map.insert(
-                named_constr(constr_name, implies(out_sbq->sender_paused(t), outq->deq_cnt(t) == 0)));
-            snprintf(constr_name, sizeof(constr_name), "%s_egress_deq_zero_e%u_t%u", id.c_str(), e, t);
-            // Scaffold path currently emits no packet even when the egress-facing SBQueue is open.
-            constr_map.insert(named_constr(constr_name, outq->deq_cnt(t) == 0));
+                named_constr(constr_name, implies(!has_pkt_e_[e][t], min_stamp_e_[e][t] == -1)));
+
+            snprintf(constr_name, sizeof(constr_name), "%s_min_stamp_lb_e%u_t%u", id.c_str(), e, t);
+            // min_stamp_e uses -1 as empty sentinel and is otherwise non-negative.
+            constr_map.insert(named_constr(constr_name, min_stamp_e_[e][t] >= -1));
+
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_min_stamp_witness_e%u_t%u",
+                     id.c_str(),
+                     e,
+                     t);
+            // If candidates exist, at least one candidate packet must witness min_stamp_e.
+            constr_map.insert(
+                named_constr(constr_name, implies(has_pkt_e_[e][t], mk_or(min_witness_vec))));
+
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_work_conserving_nonempty_e%u_t%u",
+                     id.c_str(),
+                     e,
+                     t);
+            // A non-paused egress must serve when it has at least one candidate packet.
+            constr_map.insert(named_constr(
+                constr_name,
+                implies(has_pkt_e_[e][t] && !out_sbq->sender_paused(t), outq->deq_cnt(t) > 0)));
+
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_paused_or_empty_blocks_deq_e%u_t%u",
+                     id.c_str(),
+                     e,
+                     t);
+            // A paused or empty egress cannot dequeue in this slot.
+            constr_map.insert(named_constr(
+                constr_name,
+                implies(!has_pkt_e_[e][t] || out_sbq->sender_paused(t), outq->deq_cnt(t) == 0)));
+
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_read_deq_eq_e%u_t%u_k%u",
+                     id.c_str(),
+                     e,
+                     t,
+                     deq_k);
+            // The number of slots read for egress e equals its interface dequeue count.
+            constr_map.insert(
+                named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
+
+            unsigned int ser_factor = egress_serialization_factor(e);
+            for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_deq_cooldown_e%u_t%u_dt%u_k%u",
+                         id.c_str(),
+                         e,
+                         t,
+                         dt,
+                         deq_k);
+                // Serialization cooldown: after dequeuing in slot t, egress e cannot dequeue again
+                // for the next S_e-1 slots.
+                constr_map.insert(named_constr(
+                    constr_name,
+                    implies(outq->deq_cnt(t) > 0, outq->deq_cnt(t + dt) == 0)));
+            }
+
             for (unsigned int i = 0; i < outq->max_enq(); i++) {
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -1309,18 +1423,4 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
         }
     }
 
-    for (unsigned int b = 0; b < slot_cnt; b++) {
-        for (unsigned int t = 0; t < total_time; t++) {
-            for (unsigned int k = 0; k < micro_steps; k++) {
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "%s_read_slot_false_b%u_t%u_k%u",
-                         id.c_str(),
-                         b,
-                         t,
-                         k);
-                constr_map.insert(named_constr(constr_name, !read_slot_[b][t][k]));
-            }
-        }
-    }
 }
