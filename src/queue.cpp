@@ -607,40 +607,49 @@ ostream& operator<<(ostream& os, const Link& q) {
     return os;
 }
 
-/* ********************* SBIngressQueue *********************** */
+/* ********************* SBQueue *********************** */
 
-SBIngressQueue::SBIngressQueue(cid_t module_id,
-                               cid_t queue_id,
-                               unsigned int size,
-                               unsigned int max_enq,
-                               unsigned int max_deq,
-                               unsigned int total_time,
-                               NetContext& net_ctx):
+SBQueue::SBQueue(cid_t module_id,
+                 cid_t queue_id,
+                 unsigned int size,
+                 unsigned int max_enq,
+                 unsigned int max_deq,
+                 unsigned int total_time,
+                 NetContext& net_ctx):
 Queue(module_id, queue_id, size, max_enq, max_deq, total_time, net_ctx) {
+    char vname[120];
+    for (unsigned int t = 0; t < total_time; t++) {
+        snprintf(vname, sizeof(vname), "%s_pause_tx[%u]", id.c_str(), t);
+        pause_tx_.push_back(net_ctx.bool_const(vname));
+        snprintf(vname, sizeof(vname), "%s_resume_tx[%u]", id.c_str(), t);
+        resume_tx_.push_back(net_ctx.bool_const(vname));
+        snprintf(vname, sizeof(vname), "%s_pause_rx[%u]", id.c_str(), t);
+        pause_rx_.push_back(net_ctx.bool_const(vname));
+        snprintf(vname, sizeof(vname), "%s_resume_rx[%u]", id.c_str(), t);
+        resume_rx_.push_back(net_ctx.bool_const(vname));
+        snprintf(vname, sizeof(vname), "%s_sender_paused[%u]", id.c_str(), t);
+        sender_paused_.push_back(net_ctx.bool_const(vname));
+    }
 }
 
-void SBIngressQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
+void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
     char constr_name[120];
 
     for (unsigned int t = 0; t < total_time; t++) {
-        // Shared-buffer ingress queue does not model internal queue state.
-        // Keep element state inert so no legacy queue behavior leaks in.
+        // Shared-buffer interface queues do not model internal packet storage.
+        // Keep element state inert so no legacy queue sliding-window semantics leak in.
         for (unsigned int p = 0; p < size_; p++) {
             snprintf(constr_name, sizeof(constr_name), "%s_elem_null_%u_%u", id.c_str(), p, t);
             constr_map.insert(named_constr(constr_name, elems_[p][t] == net_ctx.null_pkt()));
         }
 
-        // Ingress compatibility queue never dequeues through legacy queue semantics.
-        snprintf(constr_name, sizeof(constr_name), "%s_deq_zero_%u", id.c_str(), t);
-        constr_map.insert(named_constr(constr_name, deq_cnt_[t] == 0));
-
-        // Shared-buffer ingress allows at most one arrival per slot for this queue.
+        // Shared-buffer interface queues expose at most one enqueue-visible packet per slot.
         for (unsigned int p = 1; p < max_enq_; p++) {
             snprintf(constr_name, sizeof(constr_name), "%s_enq_null_%u_%u", id.c_str(), p, t);
             constr_map.insert(named_constr(constr_name, enqs_[p][t] == net_ctx.null_pkt()));
         }
 
-        // Couting: enq_cnt is exactly 0/1 based on enqs[0] validity.
+        // Counting: enq_cnt is exactly 0/1 based on enqs[0] validity.
         if (max_enq_ > 0) {
             snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_from_enq0_%u", id.c_str(), t);
             constr_map.insert(named_constr(constr_name,
@@ -651,43 +660,88 @@ void SBIngressQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_
             snprintf(constr_name, sizeof(constr_name), "%s_enq_cnt_zero_%u", id.c_str(), t);
             constr_map.insert(named_constr(constr_name, enq_cnt_[t] == 0));
         }
-    }
-}
 
-/* ********************* SBEgressQueue *********************** */
-
-SBEgressQueue::SBEgressQueue(cid_t module_id,
-                             cid_t queue_id,
-                             unsigned int size,
-                             unsigned int max_enq,
-                             unsigned int max_deq,
-                             unsigned int total_time,
-                             NetContext& net_ctx):
-Queue(module_id, queue_id, size, max_enq, max_deq, total_time, net_ctx) {
-}
-
-void SBEgressQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
-    char constr_name[120];
-
-    for (unsigned int t = 0; t < total_time; t++) {
-        // Shared-buffer egress queue keeps no legacy queue payload state.
-        for (unsigned int p = 0; p < size_; p++) {
-            snprintf(constr_name, sizeof(constr_name), "%s_elem_null_%u_%u", id.c_str(), p, t);
-            constr_map.insert(named_constr(constr_name, elems_[p][t] == net_ctx.null_pkt()));
-        }
-        for (unsigned int p = 0; p < max_enq_; p++) {
-            snprintf(constr_name, sizeof(constr_name), "%s_enq_null_%u_%u", id.c_str(), p, t);
-            constr_map.insert(named_constr(constr_name, enqs_[p][t] == net_ctx.null_pkt()));
-        }
-
-        // enq_cnt is unused for shared-buffer egress compatibility queues.
-        snprintf(constr_name, sizeof(constr_name), "%s_enq_zero_%u", id.c_str(), t);
-        constr_map.insert(named_constr(constr_name, enq_cnt_[t] == 0));
-
-        // deq_cnt is driven externally by shared-buffer read constraints; keep only bounds.
+        // deq_cnt is not queue-local storage semantics anymore; only keep coarse bounds.
         snprintf(constr_name, sizeof(constr_name), "%s_deq_lb_%u", id.c_str(), t);
         constr_map.insert(named_constr(constr_name, deq_cnt_[t] >= 0));
         snprintf(constr_name, sizeof(constr_name), "%s_deq_ub_%u", id.c_str(), t);
         constr_map.insert(named_constr(constr_name, deq_cnt_[t] <= (int) max_deq_));
+
+        // Downstream ingress cannot emit pause and resume simultaneously.
+        snprintf(constr_name, sizeof(constr_name), "%s_ctrl_tx_mutex_%u", id.c_str(), t);
+        constr_map.insert(named_constr(constr_name, !(pause_tx_[t] && resume_tx_[t])));
+
+        if (t == 0) {
+            // No delayed control packet has arrived before the first slot.
+            snprintf(constr_name, sizeof(constr_name), "%s_pause_rx_init", id.c_str());
+            constr_map.insert(named_constr(constr_name, !pause_rx_[0]));
+            snprintf(constr_name, sizeof(constr_name), "%s_resume_rx_init", id.c_str());
+            constr_map.insert(named_constr(constr_name, !resume_rx_[0]));
+            snprintf(constr_name, sizeof(constr_name), "%s_sender_paused_init", id.c_str());
+            constr_map.insert(named_constr(constr_name, !sender_paused_[0]));
+        } else {
+            // Coarse-step control propagation: pause/resume sent at t-1 is observed at t.
+            snprintf(constr_name, sizeof(constr_name), "%s_pause_rx_delay_%u", id.c_str(), t);
+            constr_map.insert(named_constr(constr_name, pause_rx_[t] == pause_tx_[t - 1]));
+            snprintf(constr_name, sizeof(constr_name), "%s_resume_rx_delay_%u", id.c_str(), t);
+            constr_map.insert(named_constr(constr_name, resume_rx_[t] == resume_tx_[t - 1]));
+
+            // The upstream sender obeys the delayed pause/resume state.
+            snprintf(constr_name, sizeof(constr_name), "%s_sender_paused_step_%u", id.c_str(), t);
+            constr_map.insert(
+                named_constr(constr_name,
+                             sender_paused_[t] ==
+                                 ((sender_paused_[t - 1] || pause_rx_[t]) && !resume_rx_[t])));
+        }
     }
+}
+
+expr&
+SBQueue::pause_tx(unsigned int t) {
+    return pause_tx_[t];
+}
+
+const expr&
+SBQueue::pause_tx(unsigned int t) const {
+    return pause_tx_[t];
+}
+
+expr&
+SBQueue::resume_tx(unsigned int t) {
+    return resume_tx_[t];
+}
+
+const expr&
+SBQueue::resume_tx(unsigned int t) const {
+    return resume_tx_[t];
+}
+
+expr&
+SBQueue::pause_rx(unsigned int t) {
+    return pause_rx_[t];
+}
+
+const expr&
+SBQueue::pause_rx(unsigned int t) const {
+    return pause_rx_[t];
+}
+
+expr&
+SBQueue::resume_rx(unsigned int t) {
+    return resume_rx_[t];
+}
+
+const expr&
+SBQueue::resume_rx(unsigned int t) const {
+    return resume_rx_[t];
+}
+
+expr&
+SBQueue::sender_paused(unsigned int t) {
+    return sender_paused_[t];
+}
+
+const expr&
+SBQueue::sender_paused(unsigned int t) const {
+    return sender_paused_[t];
 }

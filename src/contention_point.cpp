@@ -105,23 +105,23 @@ void ContentionPoint::setup_edges() {
                         break;
                     }
                     case queue_t::SB_INGRESS: {
-                        queue = new SBIngressQueue(base_out_id,
-                                                   to_string(q),
-                                                   qinfo.size,
-                                                   qinfo.max_enq,
-                                                   qinfo.max_deq,
-                                                   total_time,
-                                                   net_ctx);
+                        queue = new SBQueue(base_out_id,
+                                            to_string(q),
+                                            qinfo.size,
+                                            qinfo.max_enq,
+                                            qinfo.max_deq,
+                                            total_time,
+                                            net_ctx);
                         break;
                     }
                     case queue_t::SB_EGRESS: {
-                        queue = new SBEgressQueue(base_out_id,
-                                                  to_string(q),
-                                                  qinfo.size,
-                                                  qinfo.max_enq,
-                                                  qinfo.max_deq,
-                                                  total_time,
-                                                  net_ctx);
+                        queue = new SBQueue(base_out_id,
+                                            to_string(q),
+                                            qinfo.size,
+                                            qinfo.max_enq,
+                                            qinfo.max_deq,
+                                            total_time,
+                                            net_ctx);
                         break;
                     }
                     default: {

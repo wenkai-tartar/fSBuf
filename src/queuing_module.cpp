@@ -39,23 +39,23 @@ out_queue_info(out_queue_info) {
                 break;
             }
             case queue_t::SB_INGRESS: {
-                q = new SBIngressQueue(base_in_id,
-                                       to_string(qid),
-                                       qinfo.size,
-                                       qinfo.max_enq,
-                                       qinfo.max_deq,
-                                       total_time,
-                                       net_ctx);
+                q = new SBQueue(base_in_id,
+                                to_string(qid),
+                                qinfo.size,
+                                qinfo.max_enq,
+                                qinfo.max_deq,
+                                total_time,
+                                net_ctx);
                 break;
             }
             case queue_t::SB_EGRESS: {
-                q = new SBEgressQueue(base_in_id,
-                                      to_string(qid),
-                                      qinfo.size,
-                                      qinfo.max_enq,
-                                      qinfo.max_deq,
-                                      total_time,
-                                      net_ctx);
+                q = new SBQueue(base_in_id,
+                                to_string(qid),
+                                qinfo.size,
+                                qinfo.max_enq,
+                                qinfo.max_deq,
+                                total_time,
+                                net_ctx);
                 break;
             }
             default: {

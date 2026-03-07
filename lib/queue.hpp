@@ -122,37 +122,59 @@ public:
     friend ostream& operator<<(ostream& os, const Link& q);
 };
 
-/* *********************** SBIngressQueue ********************** */
-/* Shared-buffer ingress compatibility queue:
- * keep only enqs -> enq_cnt constraints, do not model queue sliding-window behavior.
+/* *********************** SBQueue ********************** */
+/* Shared-buffer compatibility queue:
+ * this is a coarse-step link/interface object, not a real packet container.
+ * Packet storage lives inside SharedBufferSwitchQM. The queue keeps:
+ *   - enqs -> enq_cnt interface visibility
+ *   - inert elem state for legacy compatibility
+ *   - coarse-step pause/resume and delayed sender-visible control state
  */
-class SBIngressQueue : public Queue {
+class SBQueue : public Queue {
 public:
-    SBIngressQueue(cid_t module_id,
-                   cid_t queue_id,
-                   unsigned int size,
-                   unsigned int max_enq,
-                   unsigned int max_deq,
-                   unsigned int total_time,
-                   NetContext& net_ctx);
+    SBQueue(cid_t module_id,
+            cid_t queue_id,
+            unsigned int size,
+            unsigned int max_enq,
+            unsigned int max_deq,
+            unsigned int total_time,
+            NetContext& net_ctx);
 
     void add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) override;
+
+    expr& pause_tx(unsigned int t);
+    const expr& pause_tx(unsigned int t) const;
+
+    expr& resume_tx(unsigned int t);
+    const expr& resume_tx(unsigned int t) const;
+
+    expr& pause_rx(unsigned int t);
+    const expr& pause_rx(unsigned int t) const;
+
+    expr& resume_rx(unsigned int t);
+    const expr& resume_rx(unsigned int t) const;
+
+    expr& sender_paused(unsigned int t);
+    const expr& sender_paused(unsigned int t) const;
+
+private:
+    vector<expr> pause_tx_;
+    vector<expr> resume_tx_;
+    vector<expr> pause_rx_;
+    vector<expr> resume_rx_;
+    vector<expr> sender_paused_;
 };
 
-/* *********************** SBEgressQueue ********************** */
-/* Shared-buffer egress compatibility queue:
- * deq_cnt is controlled by shared-buffer constraints; queue internals are not modeled.
+/* Compatibility wrappers: legacy code still refers to ingress/egress queue classes,
+ * but both now share the same SBQueue semantics.
  */
-class SBEgressQueue : public Queue {
+class SBIngressQueue : public SBQueue {
 public:
-    SBEgressQueue(cid_t module_id,
-                  cid_t queue_id,
-                  unsigned int size,
-                  unsigned int max_enq,
-                  unsigned int max_deq,
-                  unsigned int total_time,
-                  NetContext& net_ctx);
+    using SBQueue::SBQueue;
+};
 
-    void add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) override;
+class SBEgressQueue : public SBQueue {
+public:
+    using SBQueue::SBQueue;
 };
 #endif /* Queue_hpp */
