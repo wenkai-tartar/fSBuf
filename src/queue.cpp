@@ -11,6 +11,42 @@
 #include <iostream>
 #include <sstream>
 
+namespace {
+void append_pkt_slots(stringstream& ss,
+                      model& m,
+                      NetContext& net_ctx,
+                      vector<expr>* pkts,
+                      int hi,
+                      unsigned int t) {
+    for (int i = hi; i >= 0; i--) {
+        expr val = m.eval(net_ctx.pkt2val(pkts[i][t]));
+        if (val.is_true()) {
+            ss << "[";
+            expr meta1 = m.eval(net_ctx.pkt2meta1(pkts[i][t]));
+            if (meta1.is_numeral())
+                ss << meta1.get_numeral_int() << " ";
+            else
+                ss << "- ";
+
+            expr meta2 = m.eval(net_ctx.pkt2meta2(pkts[i][t]));
+            if (meta2.is_numeral())
+                ss << meta2.get_numeral_int();
+            else
+                ss << "-";
+
+            ss << "] ";
+        } else {
+            ss << "x ";
+        }
+    }
+}
+
+int eval_bool_as_int(model& m, const expr& e) {
+    expr val = m.eval(e);
+    return val.is_true() ? 1 : 0;
+}
+} // namespace
+
 /* ********************* Queue *********************** */
 
 Queue::Queue(cid_t module_id,
@@ -304,60 +340,10 @@ string Queue::get_model_str(model& m, NetContext& net_ctx, unsigned int t) {
     stringstream ss;
     ss << get_id() << ": ";
 
-    for (int i = max_enq() - 1; i >= 0; i--) {
-        expr val = m.eval(net_ctx.pkt2val(enqs_[i][t]));
-        if (val.is_true()) {
-            ss << "[";
-            expr meta1 = m.eval(net_ctx.pkt2meta1(enqs_[i][t]));
-            if (meta1.is_numeral())
-                ss << meta1.get_numeral_int() << " ";
-            else
-                ss << "- ";
-
-            expr meta2 = m.eval(net_ctx.pkt2meta2(enqs_[i][t]));
-            if (meta2.is_numeral())
-                ss << meta2.get_numeral_int();
-            else
-                ss << "-";
-
-            /*
-            expr meta3 = m.eval(net_ctx.pkt2meta3(enqs_[i][t]));
-            if (meta3.is_numeral()) ss << meta3.get_numeral_int();
-            else ss << "-";
-            */
-
-            ss << "] ";
-        } else
-            ss << "x ";
-    }
+    append_pkt_slots(ss, m, net_ctx, enqs_, (int) max_enq() - 1, t);
     ss << "|";
     ss << "-> ";
-    for (int i = size_ - 1; i >= 0; i--) {
-        expr val = m.eval(net_ctx.pkt2val(elems_[i][t]));
-        if (val.is_true()) {
-            ss << "[";
-            expr meta1 = m.eval(net_ctx.pkt2meta1(elems_[i][t]));
-            if (meta1.is_numeral())
-                ss << meta1.get_numeral_int() << " ";
-            else
-                ss << "- ";
-
-            expr meta2 = m.eval(net_ctx.pkt2meta2(elems_[i][t]));
-            if (meta2.is_numeral())
-                ss << meta2.get_numeral_int();
-            else
-                ss << "-";
-
-            /*
-            expr meta3 = m.eval(net_ctx.pkt2meta3(elems_[i][t]));
-            if (meta3.is_numeral()) ss << meta3.get_numeral_int();
-            else ss << "-";
-            */
-
-            ss << "] ";
-        } else
-            ss << "x ";
-    }
+    append_pkt_slots(ss, m, net_ctx, elems_, (int) size_ - 1, t);
     ss << "->";
     ss << " (" << m.eval(enq_cnt(t)).get_numeral_int() << ", "
        << m.eval(deq_cnt(t)).get_numeral_int() << ") ";
@@ -694,6 +680,22 @@ void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
                                  ((sender_paused_[t - 1] || pause_rx_[t]) && !resume_rx_[t])));
         }
     }
+}
+
+string SBQueue::get_model_str(model& m, NetContext& net_ctx, unsigned int t) {
+    stringstream ss;
+    ss << get_id() << ": ";
+    append_pkt_slots(ss, m, net_ctx, enqs_, (int) max_enq() - 1, t);
+    ss << "->";
+    ss << " (" << m.eval(enq_cnt(t)).get_numeral_int() << ", "
+       << m.eval(deq_cnt(t)).get_numeral_int() << ") ";
+    ss << "ctrl=("
+       << "txP=" << eval_bool_as_int(m, pause_tx_[t]) << ", "
+       << "txR=" << eval_bool_as_int(m, resume_tx_[t]) << ", "
+       << "rxP=" << eval_bool_as_int(m, pause_rx_[t]) << ", "
+       << "rxR=" << eval_bool_as_int(m, resume_rx_[t]) << ", "
+       << "sp=" << eval_bool_as_int(m, sender_paused_[t]) << ")";
+    return ss.str();
 }
 
 expr& SBQueue::pause_tx(unsigned int t) {

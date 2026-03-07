@@ -60,7 +60,7 @@ public:
 
     virtual void add_constrs(NetContext& net_ctx, map<string, expr>& constr_map);
 
-    string get_model_str(model& m, NetContext& net_ctx, unsigned int t);
+    virtual string get_model_str(model& m, NetContext& net_ctx, unsigned int t);
 
     friend ostream& operator<<(ostream& os, const Queue& q);
 
@@ -141,6 +141,8 @@ public:
             NetContext& net_ctx);
 
     void add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) override;
+
+    string get_model_str(model& m, NetContext& net_ctx, unsigned int t) override;
 
     expr& pause_tx(unsigned int t);
     const expr& pause_tx(unsigned int t) const;
