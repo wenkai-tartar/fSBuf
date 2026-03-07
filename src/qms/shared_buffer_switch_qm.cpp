@@ -70,18 +70,15 @@ unsigned int SharedBufferSwitchQM::egress_serialization_factor(unsigned int e) c
     return f;
 }
 
-const expr&
-SharedBufferSwitchQM::ingress_paused(unsigned int q, unsigned int t) const {
+const expr& SharedBufferSwitchQM::ingress_paused(unsigned int q, unsigned int t) const {
     return ingress_paused_[q][t];
 }
 
-const expr&
-SharedBufferSwitchQM::slot_pkt(unsigned int b, unsigned int t, unsigned int k) const {
+const expr& SharedBufferSwitchQM::slot_pkt(unsigned int b, unsigned int t, unsigned int k) const {
     return buf_pkt_[b][t][k];
 }
 
-SBQueue*
-SharedBufferSwitchQM::ingress_sb_queue(unsigned int q) {
+SBQueue* SharedBufferSwitchQM::ingress_sb_queue(unsigned int q) {
     SBQueue* sbq = dynamic_cast<SBQueue*>(in_queues[q]);
     if (sbq == nullptr) {
         throw runtime_error("SharedBufferSwitchQM ingress queue is not an SBQueue");
@@ -89,8 +86,7 @@ SharedBufferSwitchQM::ingress_sb_queue(unsigned int q) {
     return sbq;
 }
 
-SBQueue*
-SharedBufferSwitchQM::egress_sb_queue(unsigned int e) {
+SBQueue* SharedBufferSwitchQM::egress_sb_queue(unsigned int e) {
     SBQueue* sbq = dynamic_cast<SBQueue*>(out_queues[e]);
     if (sbq == nullptr) {
         throw runtime_error("SharedBufferSwitchQM egress queue is not an SBQueue");
@@ -185,21 +181,11 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
             ingress_paused_[q].push_back(net_ctx.bool_const(vname));
 
             for (unsigned int k = 0; k < k_states; k++) {
-                snprintf(vname,
-                         sizeof(vname),
-                         "%s_ingress_pool_occ[%u][%u][%u]",
-                         id.c_str(),
-                         q,
-                         t,
-                         k);
+                snprintf(
+                    vname, sizeof(vname), "%s_ingress_pool_occ[%u][%u][%u]", id.c_str(), q, t, k);
                 ingress_pool_occ_[q][t].push_back(net_ctx.int_const(vname));
-                snprintf(vname,
-                         sizeof(vname),
-                         "%s_headroom_pool_occ[%u][%u][%u]",
-                         id.c_str(),
-                         q,
-                         t,
-                         k);
+                snprintf(
+                    vname, sizeof(vname), "%s_headroom_pool_occ[%u][%u][%u]", id.c_str(), q, t, k);
                 headroom_pool_occ_[q][t].push_back(net_ctx.int_const(vname));
             }
 
@@ -219,8 +205,14 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
             write_slot_[q][b].resize(total_time);
             for (unsigned int t = 0; t < total_time; t++) {
                 for (unsigned int k = 0; k < micro_steps; k++) {
-                    snprintf(
-                        vname, sizeof(vname), "%s_write_slot[%u][%u][%u][%u]", id.c_str(), q, b, t, k);
+                    snprintf(vname,
+                             sizeof(vname),
+                             "%s_write_slot[%u][%u][%u][%u]",
+                             id.c_str(),
+                             q,
+                             b,
+                             t,
+                             k);
                     write_slot_[q][b][t].push_back(net_ctx.bool_const(vname));
                 }
             }
@@ -254,13 +246,8 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
             for (unsigned int k = 0; k < micro_steps; k++) {
                 snprintf(vname, sizeof(vname), "%s_admit_e[%u][%u][%u]", id.c_str(), e, t, k);
                 admit_e_[e][t].push_back(net_ctx.bool_const(vname));
-                snprintf(vname,
-                         sizeof(vname),
-                         "%s_alloc_eg_lossless[%u][%u][%u]",
-                         id.c_str(),
-                         e,
-                         t,
-                         k);
+                snprintf(
+                    vname, sizeof(vname), "%s_alloc_eg_lossless[%u][%u][%u]", id.c_str(), e, t, k);
                 alloc_eg_lossless_[e][t].push_back(net_ctx.bool_const(vname));
             }
         }
@@ -350,7 +337,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      e);
             constr_map.insert(named_constr(constr_name, egress_lossless_pool_occ_[e][0][0] == 0));
         }
-        snprintf(constr_name, sizeof(constr_name), "%s_egress_lossless_pool_total_init", id.c_str());
+        snprintf(constr_name,
+                 sizeof(constr_name),
+                 "%s_egress_lossless_pool_total_init",
+                 id.c_str());
         constr_map.insert(named_constr(constr_name, egress_lossless_pool_total_occ_[0][0] == 0));
     }
 
@@ -358,11 +348,11 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
         if (total_time > 0) {
             SBQueue* inq = ingress_sb_queue(q);
 
-            snprintf(
-                constr_name, sizeof(constr_name), "%s_ingress_paused_init_q%u", id.c_str(), q);
+            snprintf(constr_name, sizeof(constr_name), "%s_ingress_paused_init_q%u", id.c_str(), q);
             // Shared-buffer ingress starts resumed.
             constr_map.insert(named_constr(constr_name, !ingress_paused_[q][0]));
-            snprintf(constr_name, sizeof(constr_name), "%s_ingress_pause_tx_tail_q%u", id.c_str(), q);
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_ingress_pause_tx_tail_q%u", id.c_str(), q);
             // The last slot has no modeled next slot inside this horizon, so we suppress new
             // pause emission here.
             constr_map.insert(named_constr(constr_name, !inq->pause_tx(total_time - 1)));
@@ -441,11 +431,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 expr dst_eg = net_ctx.pkt2meta1(pkt) % net_ctx.int_val((int) eg_cnt);
                 expr has_ing_credit = ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt;
                 expr has_hdr_credit = headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt;
-                expr has_eg_credit =
-                    egress_lossless_pool_total_occ_[t][k] < (int) egress_lossless_pool_cap_cnt;
-                expr ingress_can_admit =
-                    (!ingress_paused_[q][t] && has_ing_credit) ||
-                    (ingress_paused_[q][t] && has_hdr_credit);
+                expr has_eg_credit = egress_lossless_pool_total_occ_[t][k] <
+                                     (int) egress_lossless_pool_cap_cnt;
+                expr ingress_can_admit = (!ingress_paused_[q][t] && has_ing_credit) ||
+                                         (ingress_paused_[q][t] && has_hdr_credit);
                 expr any_admit_e = net_ctx.bool_val(false);
                 expr_vector route_cases(net_ctx.z3_ctx());
                 expr any_empty = net_ctx.bool_val(false);
@@ -461,7 +450,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 // Ingress-side admit is granted exactly when a packet is present and the local
                 // ingress/headroom accounting path has available credit.
                 constr_map.insert(
-                    named_constr(constr_name, admit_in_[q][t][k] == (has_enq && ingress_can_admit)));
+                    named_constr(constr_name,
+                                 admit_in_[q][t][k] == (has_enq && ingress_can_admit)));
 
                 for (unsigned int e = 0; e < eg_cnt; e++) {
                     expr route_to_e = dst_eg == net_ctx.int_val((int) e);
@@ -479,9 +469,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // On the routed egress, admission is gated by egress-lossless pool credit.
-                    constr_map.insert(named_constr(
-                        constr_name,
-                        implies(has_enq && route_to_e, admit_e_[e][t][k] == has_eg_credit)));
+                    constr_map.insert(named_constr(constr_name,
+                                                   implies(has_enq && route_to_e,
+                                                           admit_e_[e][t][k] == has_eg_credit)));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -492,8 +482,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // Only the routed egress may keep its admission gate enabled for this packet.
-                    constr_map.insert(named_constr(
-                        constr_name, implies(!has_enq || !route_to_e, !admit_e_[e][t][k])));
+                    constr_map.insert(
+                        named_constr(constr_name,
+                                     implies(!has_enq || !route_to_e, !admit_e_[e][t][k])));
                 }
 
                 snprintf(constr_name,
@@ -516,7 +507,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          k);
                 // Final admit requires both ingress-side admit and an enabled routed egress gate.
                 constr_map.insert(
-                    named_constr(constr_name, admit_[q][t][k] == (admit_in_[q][t][k] && any_admit_e)));
+                    named_constr(constr_name,
+                                 admit_[q][t][k] == (admit_in_[q][t][k] && any_admit_e)));
 
                 for (unsigned int e = 0; e < eg_cnt; e++) {
                     snprintf(constr_name,
@@ -528,11 +520,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // A successful admit charges exactly the routed egress-lossless pool.
-                    constr_map.insert(named_constr(
-                        constr_name,
-                        alloc_eg_lossless_[e][t][k] ==
-                            (admit_[q][t][k] &&
-                             (dst_eg == net_ctx.int_val((int) e)))));
+                    constr_map.insert(named_constr(constr_name,
+                                                   alloc_eg_lossless_[e][t][k] ==
+                                                       (admit_[q][t][k] &&
+                                                        (dst_eg == net_ctx.int_val((int) e)))));
                 }
 
                 snprintf(constr_name,
@@ -544,8 +535,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          k);
                 // Admitted packets use ingress-pool accounting exactly when this ingress is not
                 // paused in slot t.
-                constr_map.insert(named_constr(
-                    constr_name, alloc_in_[q][t][k] == (admit_[q][t][k] && !ingress_paused_[q][t])));
+                constr_map.insert(named_constr(constr_name,
+                                               alloc_in_[q][t][k] ==
+                                                   (admit_[q][t][k] && !ingress_paused_[q][t])));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -556,8 +548,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          k);
                 // Admitted packets use headroom accounting exactly when this ingress is paused in
                 // slot t.
-                constr_map.insert(named_constr(
-                    constr_name, alloc_hdr_[q][t][k] == (admit_[q][t][k] && ingress_paused_[q][t])));
+                constr_map.insert(named_constr(constr_name,
+                                               alloc_hdr_[q][t][k] ==
+                                                   (admit_[q][t][k] && ingress_paused_[q][t])));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -568,9 +561,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          k);
                 // Ingress-pool allocation requires remaining global ingress-pool credit at the
                 // current micro-state.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(alloc_in_[q][t][k], ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt)));
+                constr_map.insert(named_constr(constr_name,
+                                               implies(alloc_in_[q][t][k],
+                                                       ingress_pool_total_occ_[t][k] <
+                                                           (int) ingress_pool_cap_cnt)));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -581,9 +575,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          k);
                 // Headroom allocation requires remaining per-ingress headroom credit at the
                 // current micro-state.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(alloc_hdr_[q][t][k], headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt)));
+                constr_map.insert(named_constr(constr_name,
+                                               implies(alloc_hdr_[q][t][k],
+                                                       headroom_pool_occ_[q][t][k] <
+                                                           (int) headroom_pool_cap_cnt)));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -594,8 +589,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          k);
                 // Every admitted packet must be accounted by exactly one of ingress/headroom
                 // allocation paths.
-                constr_map.insert(named_constr(
-                    constr_name, admit_[q][t][k] == (alloc_in_[q][t][k] || alloc_hdr_[q][t][k])));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 admit_[q][t][k] == (alloc_in_[q][t][k] || alloc_hdr_[q][t][k])));
 
                 for (unsigned int b = 0; b < slot_cnt; b++) {
                     expr slot_empty = !net_ctx.pkt2val(buf_pkt_[b][t][k]);
@@ -611,8 +607,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // A slot write is only allowed for a successfully admitted packet.
-                    constr_map.insert(named_constr(
-                        constr_name, implies(write_slot_[q][b][t][k], admit_[q][t][k])));
+                    constr_map.insert(
+                        named_constr(constr_name,
+                                     implies(write_slot_[q][b][t][k], admit_[q][t][k])));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -623,8 +620,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // A slot write is only allowed into an empty slot.
-                    constr_map.insert(named_constr(
-                        constr_name, implies(write_slot_[q][b][t][k], slot_empty)));
+                    constr_map.insert(
+                        named_constr(constr_name, implies(write_slot_[q][b][t][k], slot_empty)));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -647,8 +644,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Final admit writes exactly one slot; otherwise no slot is written.
-                constr_map.insert(named_constr(
-                    constr_name, writes_sum == ite(admit_[q][t][k], int1, int0)));
+                constr_map.insert(
+                    named_constr(constr_name, writes_sum == ite(admit_[q][t][k], int1, int0)));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -658,8 +655,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // A final admit is only possible when at least one slot is currently empty.
-                constr_map.insert(
-                    named_constr(constr_name, implies(admit_[q][t][k], any_empty)));
+                constr_map.insert(named_constr(constr_name, implies(admit_[q][t][k], any_empty)));
             }
 
             if (t + 1 < total_time) {
@@ -680,7 +676,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          q,
                          t);
                 // Pause state for the next slot is derived from the end-of-slot occupancies.
-                constr_map.insert(named_constr(constr_name, ingress_paused_[q][t + 1] == paused_next));
+                constr_map.insert(
+                    named_constr(constr_name, ingress_paused_[q][t + 1] == paused_next));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -690,7 +687,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t);
                 // Emit XOFF exactly on a resumed->paused transition.
                 constr_map.insert(
-                    named_constr(constr_name, inq->pause_tx(t) == (!ingress_paused_[q][t] && paused_next)));
+                    named_constr(constr_name,
+                                 inq->pause_tx(t) == (!ingress_paused_[q][t] && paused_next)));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -700,7 +698,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t);
                 // Emit XON exactly on a paused->resumed transition.
                 constr_map.insert(
-                    named_constr(constr_name, inq->resume_tx(t) == (ingress_paused_[q][t] && !paused_next)));
+                    named_constr(constr_name,
+                                 inq->resume_tx(t) == (ingress_paused_[q][t] && !paused_next)));
             }
         }
 
@@ -738,8 +737,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
 
             for (unsigned int b = 0; b < slot_cnt; b++) {
                 expr read_b = read_slot_[b][t][deq_k];
-                expr cand =
-                    net_ctx.pkt2val(buf_pkt_[b][t][deq_k]) && (buf_e_[b][t][deq_k] == (int) e);
+                expr cand = net_ctx.pkt2val(buf_pkt_[b][t][deq_k]) &&
+                            (buf_e_[b][t][deq_k] == (int) e);
                 expr read_by_e = read_b && (buf_e_[b][t][deq_k] == (int) e);
 
                 cand_vec.push_back(cand);
@@ -754,9 +753,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          deq_k);
                 // Reading a slot is only allowed when the slot is currently occupied.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(read_b, net_ctx.pkt2val(buf_pkt_[b][t][deq_k]))));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(read_b, net_ctx.pkt2val(buf_pkt_[b][t][deq_k]))));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -767,9 +766,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          deq_k);
                 // If egress e reads slot b, that slot must be e's HOL packet.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(read_by_e, buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t])));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(read_by_e,
+                                         buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t])));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -780,9 +780,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          deq_k);
                 // min_stamp_e is a lower bound on every candidate packet timestamp for egress e.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(cand, buf_stamp_[b][t][deq_k] >= min_stamp_e_[e][t])));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(cand, buf_stamp_[b][t][deq_k] >= min_stamp_e_[e][t])));
 
                 if (outq->max_enq() > 0) {
                     snprintf(constr_name,
@@ -794,18 +794,21 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t);
                     // If egress e reads slot b, the coarse-step output packet equals that slot's
                     // packet identity.
-                    constr_map.insert(named_constr(
-                        constr_name,
-                        implies(read_by_e, outq->enqs(0)[t] == buf_pkt_[b][t][deq_k])));
+                    constr_map.insert(
+                        named_constr(constr_name,
+                                     implies(read_by_e,
+                                             outq->enqs(0)[t] == buf_pkt_[b][t][deq_k])));
                 }
             }
 
-            snprintf(constr_name, sizeof(constr_name), "%s_has_pkt_e_def_e%u_t%u", id.c_str(), e, t);
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_has_pkt_e_def_e%u_t%u", id.c_str(), e, t);
             // has_pkt_e is true iff egress e has at least one candidate packet at the dequeue
             // micro-step.
             constr_map.insert(named_constr(constr_name, has_pkt_e_[e][t] == mk_or(cand_vec)));
 
-            snprintf(constr_name, sizeof(constr_name), "%s_min_stamp_empty_e%u_t%u", id.c_str(), e, t);
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_min_stamp_empty_e%u_t%u", id.c_str(), e, t);
             // If no candidate exists for egress e, min_stamp_e is set to -1.
             constr_map.insert(
                 named_constr(constr_name, implies(!has_pkt_e_[e][t], min_stamp_e_[e][t] == -1)));
@@ -814,12 +817,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             // min_stamp_e uses -1 as empty sentinel and is otherwise non-negative.
             constr_map.insert(named_constr(constr_name, min_stamp_e_[e][t] >= -1));
 
-            snprintf(constr_name,
-                     sizeof(constr_name),
-                     "%s_min_stamp_witness_e%u_t%u",
-                     id.c_str(),
-                     e,
-                     t);
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_min_stamp_witness_e%u_t%u", id.c_str(), e, t);
             // If candidates exist, at least one candidate packet must witness min_stamp_e.
             constr_map.insert(
                 named_constr(constr_name, implies(has_pkt_e_[e][t], mk_or(min_witness_vec))));
@@ -831,9 +830,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      e,
                      t);
             // A non-paused egress must serve when it has at least one candidate packet.
-            constr_map.insert(named_constr(
-                constr_name,
-                implies(has_pkt_e_[e][t] && !out_sbq->sender_paused(t), outq->deq_cnt(t) > 0)));
+            constr_map.insert(named_constr(constr_name,
+                                           implies(has_pkt_e_[e][t] && !out_sbq->sender_paused(t),
+                                                   outq->deq_cnt(t) > 0)));
 
             snprintf(constr_name,
                      sizeof(constr_name),
@@ -842,9 +841,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      e,
                      t);
             // A paused or empty egress cannot dequeue in this slot.
-            constr_map.insert(named_constr(
-                constr_name,
-                implies(!has_pkt_e_[e][t] || out_sbq->sender_paused(t), outq->deq_cnt(t) == 0)));
+            constr_map.insert(named_constr(constr_name,
+                                           implies(!has_pkt_e_[e][t] || out_sbq->sender_paused(t),
+                                                   outq->deq_cnt(t) == 0)));
 
             snprintf(constr_name,
                      sizeof(constr_name),
@@ -854,8 +853,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      t,
                      deq_k);
             // The number of slots read for egress e equals its interface dequeue count.
-            constr_map.insert(
-                named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
+            constr_map.insert(named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
 
             snprintf(constr_name,
                      sizeof(constr_name),
@@ -879,9 +877,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          deq_k);
                 // Serialization cooldown: after dequeuing in slot t, egress e cannot dequeue again
                 // for the next S_e-1 slots.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(outq->deq_cnt(t) > 0, outq->deq_cnt(t + dt) == 0)));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(outq->deq_cnt(t) > 0, outq->deq_cnt(t + dt) == 0)));
             }
 
             if (outq->max_enq() > 0) {
@@ -892,9 +890,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          e,
                          t);
                 // If egress e reads no slot in this slot, its coarse-step output packet is null.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(reads_this_e_t_sum == int0, outq->enqs(0)[t] == net_ctx.null_pkt())));
+                constr_map.insert(named_constr(constr_name,
+                                               implies(reads_this_e_t_sum == int0,
+                                                       outq->enqs(0)[t] == net_ctx.null_pkt())));
             }
             for (unsigned int i = 1; i < outq->max_enq(); i++) {
                 snprintf(constr_name,
@@ -905,7 +903,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          i,
                          t);
                 // Shared-buffer switch emits at most one packet per egress per slot.
-                constr_map.insert(named_constr(constr_name, outq->enqs(i)[t] == net_ctx.null_pkt()));
+                constr_map.insert(
+                    named_constr(constr_name, outq->enqs(i)[t] == net_ctx.null_pkt()));
             }
         }
     }
@@ -921,21 +920,43 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 ingress_sum = ingress_sum + ingress_pool_occ_[q][t][k];
                 headroom_sum = headroom_sum + headroom_pool_occ_[q][t][k];
 
-                snprintf(
-                    constr_name, sizeof(constr_name), "%s_ingress_pool_lb_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_ingress_pool_lb_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, ingress_pool_occ_[q][t][k] >= 0));
-                snprintf(
-                    constr_name, sizeof(constr_name), "%s_ingress_pool_ub_q%u_t%u_k%u", id.c_str(), q, t, k);
-                constr_map.insert(named_constr(
-                    constr_name, ingress_pool_occ_[q][t][k] <= (int) ingress_pool_cap_cnt));
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_ingress_pool_ub_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 ingress_pool_occ_[q][t][k] <= (int) ingress_pool_cap_cnt));
 
-                snprintf(
-                    constr_name, sizeof(constr_name), "%s_headroom_pool_lb_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_headroom_pool_lb_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, headroom_pool_occ_[q][t][k] >= 0));
-                snprintf(
-                    constr_name, sizeof(constr_name), "%s_headroom_pool_ub_q%u_t%u_k%u", id.c_str(), q, t, k);
-                constr_map.insert(named_constr(
-                    constr_name, headroom_pool_occ_[q][t][k] <= (int) headroom_pool_cap_cnt));
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_headroom_pool_ub_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 headroom_pool_occ_[q][t][k] <= (int) headroom_pool_cap_cnt));
             }
 
             for (unsigned int e = 0; e < eg_cnt; e++) {
@@ -948,7 +969,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          e,
                          t,
                          k);
-                constr_map.insert(named_constr(constr_name, egress_lossless_pool_occ_[e][t][k] >= 0));
+                constr_map.insert(
+                    named_constr(constr_name, egress_lossless_pool_occ_[e][t][k] >= 0));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_egress_lossless_pool_ub_e%u_t%u_k%u",
@@ -956,17 +978,25 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          e,
                          t,
                          k);
-                constr_map.insert(named_constr(
-                    constr_name,
-                    egress_lossless_pool_occ_[e][t][k] <= (int) egress_lossless_pool_cap_cnt));
+                constr_map.insert(named_constr(constr_name,
+                                               egress_lossless_pool_occ_[e][t][k] <=
+                                                   (int) egress_lossless_pool_cap_cnt));
             }
 
-            snprintf(
-                constr_name, sizeof(constr_name), "%s_ingress_pool_total_sum_t%u_k%u", id.c_str(), t, k);
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_ingress_pool_total_sum_t%u_k%u",
+                     id.c_str(),
+                     t,
+                     k);
             constr_map.insert(
                 named_constr(constr_name, ingress_pool_total_occ_[t][k] == ingress_sum));
-            snprintf(
-                constr_name, sizeof(constr_name), "%s_headroom_pool_total_sum_t%u_k%u", id.c_str(), t, k);
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_headroom_pool_total_sum_t%u_k%u",
+                     id.c_str(),
+                     t,
+                     k);
             constr_map.insert(
                 named_constr(constr_name, headroom_pool_total_occ_[t][k] == headroom_sum));
             snprintf(constr_name,
@@ -978,37 +1008,56 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             constr_map.insert(
                 named_constr(constr_name, egress_lossless_pool_total_occ_[t][k] == egress_sum));
 
-            snprintf(
-                constr_name, sizeof(constr_name), "%s_ingress_pool_total_lb_t%u_k%u", id.c_str(), t, k);
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_ingress_pool_total_lb_t%u_k%u",
+                     id.c_str(),
+                     t,
+                     k);
             constr_map.insert(named_constr(constr_name, ingress_pool_total_occ_[t][k] >= 0));
-            snprintf(
-                constr_name, sizeof(constr_name), "%s_ingress_pool_total_ub_t%u_k%u", id.c_str(), t, k);
-            constr_map.insert(named_constr(
-                constr_name, ingress_pool_total_occ_[t][k] <= (int) ingress_pool_cap_cnt));
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_ingress_pool_total_ub_t%u_k%u",
+                     id.c_str(),
+                     t,
+                     k);
+            constr_map.insert(
+                named_constr(constr_name,
+                             ingress_pool_total_occ_[t][k] <= (int) ingress_pool_cap_cnt));
 
-            snprintf(
-                constr_name, sizeof(constr_name), "%s_headroom_pool_total_lb_t%u_k%u", id.c_str(), t, k);
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_headroom_pool_total_lb_t%u_k%u",
+                     id.c_str(),
+                     t,
+                     k);
             constr_map.insert(named_constr(constr_name, headroom_pool_total_occ_[t][k] >= 0));
-            snprintf(
-                constr_name, sizeof(constr_name), "%s_headroom_pool_total_ub_t%u_k%u", id.c_str(), t, k);
-            constr_map.insert(named_constr(
-                constr_name, headroom_pool_total_occ_[t][k] <= (int) headroom_pool_cap_cnt));
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_headroom_pool_total_ub_t%u_k%u",
+                     id.c_str(),
+                     t,
+                     k);
+            constr_map.insert(
+                named_constr(constr_name,
+                             headroom_pool_total_occ_[t][k] <= (int) headroom_pool_cap_cnt));
             snprintf(constr_name,
                      sizeof(constr_name),
                      "%s_egress_lossless_pool_total_lb_t%u_k%u",
                      id.c_str(),
                      t,
                      k);
-            constr_map.insert(named_constr(constr_name, egress_lossless_pool_total_occ_[t][k] >= 0));
+            constr_map.insert(
+                named_constr(constr_name, egress_lossless_pool_total_occ_[t][k] >= 0));
             snprintf(constr_name,
                      sizeof(constr_name),
                      "%s_egress_lossless_pool_total_ub_t%u_k%u",
                      id.c_str(),
                      t,
                      k);
-            constr_map.insert(named_constr(
-                constr_name,
-                egress_lossless_pool_total_occ_[t][k] <= (int) egress_lossless_pool_cap_cnt));
+            constr_map.insert(named_constr(constr_name,
+                                           egress_lossless_pool_total_occ_[t][k] <=
+                                               (int) egress_lossless_pool_cap_cnt));
         }
     }
 
@@ -1040,8 +1089,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // A physical slot cannot be read and written in the same micro-step.
-                constr_map.insert(named_constr(
-                    constr_name, slot_writers_sum + b2i(read_slot_[b][t][k]) <= int1));
+                constr_map.insert(
+                    named_constr(constr_name, slot_writers_sum + b2i(read_slot_[b][t][k]) <= int1));
             }
         }
     }
@@ -1070,8 +1119,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Empty slots carry no egress owner.
-                constr_map.insert(
-                    named_constr(constr_name, implies(!used, buf_e_[b][t][k] == -1)));
+                constr_map.insert(named_constr(constr_name, implies(!used, buf_e_[b][t][k] == -1)));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_buf_empty_stamp_neg1_b%u_t%u_k%u",
@@ -1091,8 +1139,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Occupied slots must reference a valid ingress owner.
-                constr_map.insert(
-                    named_constr(constr_name, implies(used, buf_in_[b][t][k] >= 0)));
+                constr_map.insert(named_constr(constr_name, implies(used, buf_in_[b][t][k] >= 0)));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_buf_used_in_ub_b%u_t%u_k%u",
@@ -1111,8 +1158,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Occupied slots must reference a valid egress owner.
-                constr_map.insert(
-                    named_constr(constr_name, implies(used, buf_e_[b][t][k] >= 0)));
+                constr_map.insert(named_constr(constr_name, implies(used, buf_e_[b][t][k] >= 0)));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_buf_used_e_ub_b%u_t%u_k%u",
@@ -1158,10 +1204,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          q,
                          t,
                          k);
-                constr_map.insert(named_constr(
-                    constr_name,
-                    ingress_pool_occ_[q][t][k + 1] ==
-                        ingress_pool_occ_[q][t][k] + b2i(alloc_in_[q][t][k]) - release_in_delta));
+                constr_map.insert(named_constr(constr_name,
+                                               ingress_pool_occ_[q][t][k + 1] ==
+                                                   ingress_pool_occ_[q][t][k] +
+                                                       b2i(alloc_in_[q][t][k]) - release_in_delta));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -1170,10 +1216,11 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          q,
                          t,
                          k);
-                constr_map.insert(named_constr(
-                    constr_name,
-                    headroom_pool_occ_[q][t][k + 1] ==
-                        headroom_pool_occ_[q][t][k] + b2i(alloc_hdr_[q][t][k]) - release_hdr_delta));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 headroom_pool_occ_[q][t][k + 1] == headroom_pool_occ_[q][t][k] +
+                                                                        b2i(alloc_hdr_[q][t][k]) -
+                                                                        release_hdr_delta));
             }
 
             for (unsigned int e = 0; e < eg_cnt; e++) {
@@ -1189,11 +1236,11 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          e,
                          t,
                          k);
-                constr_map.insert(named_constr(
-                    constr_name,
-                    egress_lossless_pool_occ_[e][t][k + 1] ==
-                        egress_lossless_pool_occ_[e][t][k] +
-                            b2i(alloc_eg_lossless_[e][t][k]) - release_e_delta));
+                constr_map.insert(named_constr(constr_name,
+                                               egress_lossless_pool_occ_[e][t][k + 1] ==
+                                                   egress_lossless_pool_occ_[e][t][k] +
+                                                       b2i(alloc_eg_lossless_[e][t][k]) -
+                                                       release_e_delta));
             }
 
             for (unsigned int b = 0; b < slot_cnt; b++) {
@@ -1219,9 +1266,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // Writing queue q to slot b copies packet identity into the next micro-state.
-                    constr_map.insert(named_constr(
-                        constr_name,
-                        implies(write_slot_[q][b][t][k], buf_pkt_[b][t][k + 1] == pkt)));
+                    constr_map.insert(named_constr(constr_name,
+                                                   implies(write_slot_[q][b][t][k],
+                                                           buf_pkt_[b][t][k + 1] == pkt)));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -1232,9 +1279,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // Writing queue q to slot b records ingress owner q.
-                    constr_map.insert(named_constr(
-                        constr_name,
-                        implies(write_slot_[q][b][t][k], buf_in_[b][t][k + 1] == (int) q)));
+                    constr_map.insert(named_constr(constr_name,
+                                                   implies(write_slot_[q][b][t][k],
+                                                           buf_in_[b][t][k + 1] == (int) q)));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -1245,9 +1292,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // Writing queue q to slot b records the routed egress owner.
-                    constr_map.insert(named_constr(
-                        constr_name,
-                        implies(write_slot_[q][b][t][k], buf_e_[b][t][k + 1] == dst_eg)));
+                    constr_map.insert(named_constr(constr_name,
+                                                   implies(write_slot_[q][b][t][k],
+                                                           buf_e_[b][t][k + 1] == dst_eg)));
 
                     snprintf(constr_name,
                              sizeof(constr_name),
@@ -1258,9 +1305,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                              t,
                              k);
                     // Writing queue q to slot b records this micro-step timestamp.
-                    constr_map.insert(named_constr(
-                        constr_name,
-                        implies(write_slot_[q][b][t][k], buf_stamp_[b][t][k + 1] == write_stamp)));
+                    constr_map.insert(
+                        named_constr(constr_name,
+                                     implies(write_slot_[q][b][t][k],
+                                             buf_stamp_[b][t][k + 1] == write_stamp)));
                 }
 
                 snprintf(constr_name,
@@ -1271,9 +1319,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Reading slot b clears packet identity in the next micro-state.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(any_read, buf_pkt_[b][t][k + 1] == net_ctx.null_pkt())));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(any_read, buf_pkt_[b][t][k + 1] == net_ctx.null_pkt())));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_buf_in_read_clear_b%u_t%u_k%u",
@@ -1313,10 +1361,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Without a read/write action, packet identity carries over unchanged.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(!any_write && !any_read,
-                            buf_pkt_[b][t][k + 1] == buf_pkt_[b][t][k])));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(!any_write && !any_read,
+                                         buf_pkt_[b][t][k + 1] == buf_pkt_[b][t][k])));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_buf_in_keep_b%u_t%u_k%u",
@@ -1325,10 +1373,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Without a read/write action, ingress owner carries over unchanged.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(!any_write && !any_read,
-                            buf_in_[b][t][k + 1] == buf_in_[b][t][k])));
+                constr_map.insert(named_constr(constr_name,
+                                               implies(!any_write && !any_read,
+                                                       buf_in_[b][t][k + 1] == buf_in_[b][t][k])));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_buf_e_keep_b%u_t%u_k%u",
@@ -1337,10 +1384,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Without a read/write action, egress owner carries over unchanged.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(!any_write && !any_read,
-                            buf_e_[b][t][k + 1] == buf_e_[b][t][k])));
+                constr_map.insert(named_constr(constr_name,
+                                               implies(!any_write && !any_read,
+                                                       buf_e_[b][t][k + 1] == buf_e_[b][t][k])));
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_buf_stamp_keep_b%u_t%u_k%u",
@@ -1349,10 +1395,10 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 // Without a read/write action, timestamp carries over unchanged.
-                constr_map.insert(named_constr(
-                    constr_name,
-                    implies(!any_write && !any_read,
-                            buf_stamp_[b][t][k + 1] == buf_stamp_[b][t][k])));
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(!any_write && !any_read,
+                                         buf_stamp_[b][t][k + 1] == buf_stamp_[b][t][k])));
             }
         }
     }
@@ -1376,8 +1422,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      t);
             // Interface dequeue count for egress e matches the number of internal slots read for
             // that egress in the dequeue micro-step.
-            constr_map.insert(
-                named_constr(constr_name, out_queues[e]->deq_cnt(t) == reads_e));
+            constr_map.insert(named_constr(constr_name, out_queues[e]->deq_cnt(t) == reads_e));
         }
 
         snprintf(constr_name,
@@ -1400,8 +1445,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      id.c_str(),
                      q,
                      t);
-            constr_map.insert(named_constr(
-                constr_name, ingress_pool_occ_[q][t + 1][0] == ingress_pool_occ_[q][t][micro_steps]));
+            constr_map.insert(named_constr(constr_name,
+                                           ingress_pool_occ_[q][t + 1][0] ==
+                                               ingress_pool_occ_[q][t][micro_steps]));
 
             snprintf(constr_name,
                      sizeof(constr_name),
@@ -1409,8 +1455,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      id.c_str(),
                      q,
                      t);
-            constr_map.insert(named_constr(
-                constr_name, headroom_pool_occ_[q][t + 1][0] == headroom_pool_occ_[q][t][micro_steps]));
+            constr_map.insert(named_constr(constr_name,
+                                           headroom_pool_occ_[q][t + 1][0] ==
+                                               headroom_pool_occ_[q][t][micro_steps]));
         }
         for (unsigned int e = 0; e < eg_cnt; e++) {
             snprintf(constr_name,
@@ -1419,29 +1466,29 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      id.c_str(),
                      e,
                      t);
-            constr_map.insert(named_constr(
-                constr_name,
-                egress_lossless_pool_occ_[e][t + 1][0] ==
-                    egress_lossless_pool_occ_[e][t][micro_steps]));
+            constr_map.insert(named_constr(constr_name,
+                                           egress_lossless_pool_occ_[e][t + 1][0] ==
+                                               egress_lossless_pool_occ_[e][t][micro_steps]));
         }
 
         snprintf(
             constr_name, sizeof(constr_name), "%s_ingress_pool_total_handoff_t%u", id.c_str(), t);
-        constr_map.insert(named_constr(
-            constr_name, ingress_pool_total_occ_[t + 1][0] == ingress_pool_total_occ_[t][micro_steps]));
+        constr_map.insert(named_constr(constr_name,
+                                       ingress_pool_total_occ_[t + 1][0] ==
+                                           ingress_pool_total_occ_[t][micro_steps]));
         snprintf(
             constr_name, sizeof(constr_name), "%s_headroom_pool_total_handoff_t%u", id.c_str(), t);
-        constr_map.insert(named_constr(
-            constr_name, headroom_pool_total_occ_[t + 1][0] == headroom_pool_total_occ_[t][micro_steps]));
+        constr_map.insert(named_constr(constr_name,
+                                       headroom_pool_total_occ_[t + 1][0] ==
+                                           headroom_pool_total_occ_[t][micro_steps]));
         snprintf(constr_name,
                  sizeof(constr_name),
                  "%s_egress_lossless_pool_total_handoff_t%u",
                  id.c_str(),
                  t);
-        constr_map.insert(named_constr(
-            constr_name,
-            egress_lossless_pool_total_occ_[t + 1][0] ==
-                egress_lossless_pool_total_occ_[t][micro_steps]));
+        constr_map.insert(named_constr(constr_name,
+                                       egress_lossless_pool_total_occ_[t + 1][0] ==
+                                           egress_lossless_pool_total_occ_[t][micro_steps]));
     }
 
     // Initial slot state is empty before the first micro-step.
@@ -1461,19 +1508,23 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
     // End-of-slot slot state seeds the next slot's initial micro-state.
     for (unsigned int t = 0; t + 1 < total_time; t++) {
         for (unsigned int b = 0; b < slot_cnt; b++) {
-            snprintf(constr_name, sizeof(constr_name), "%s_buf_pkt_handoff_b%u_t%u", id.c_str(), b, t);
-            constr_map.insert(named_constr(
-                constr_name, buf_pkt_[b][t + 1][0] == buf_pkt_[b][t][micro_steps]));
-            snprintf(constr_name, sizeof(constr_name), "%s_buf_in_handoff_b%u_t%u", id.c_str(), b, t);
-            constr_map.insert(named_constr(
-                constr_name, buf_in_[b][t + 1][0] == buf_in_[b][t][micro_steps]));
-            snprintf(constr_name, sizeof(constr_name), "%s_buf_e_handoff_b%u_t%u", id.c_str(), b, t);
-            constr_map.insert(named_constr(
-                constr_name, buf_e_[b][t + 1][0] == buf_e_[b][t][micro_steps]));
-            snprintf(constr_name, sizeof(constr_name), "%s_buf_stamp_handoff_b%u_t%u", id.c_str(), b, t);
-            constr_map.insert(named_constr(
-                constr_name, buf_stamp_[b][t + 1][0] == buf_stamp_[b][t][micro_steps]));
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_buf_pkt_handoff_b%u_t%u", id.c_str(), b, t);
+            constr_map.insert(
+                named_constr(constr_name, buf_pkt_[b][t + 1][0] == buf_pkt_[b][t][micro_steps]));
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_buf_in_handoff_b%u_t%u", id.c_str(), b, t);
+            constr_map.insert(
+                named_constr(constr_name, buf_in_[b][t + 1][0] == buf_in_[b][t][micro_steps]));
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_buf_e_handoff_b%u_t%u", id.c_str(), b, t);
+            constr_map.insert(
+                named_constr(constr_name, buf_e_[b][t + 1][0] == buf_e_[b][t][micro_steps]));
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_buf_stamp_handoff_b%u_t%u", id.c_str(), b, t);
+            constr_map.insert(
+                named_constr(constr_name,
+                             buf_stamp_[b][t + 1][0] == buf_stamp_[b][t][micro_steps]));
         }
     }
-
 }

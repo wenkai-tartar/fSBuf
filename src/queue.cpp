@@ -696,52 +696,42 @@ void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
     }
 }
 
-expr&
-SBQueue::pause_tx(unsigned int t) {
+expr& SBQueue::pause_tx(unsigned int t) {
     return pause_tx_[t];
 }
 
-const expr&
-SBQueue::pause_tx(unsigned int t) const {
+const expr& SBQueue::pause_tx(unsigned int t) const {
     return pause_tx_[t];
 }
 
-expr&
-SBQueue::resume_tx(unsigned int t) {
+expr& SBQueue::resume_tx(unsigned int t) {
     return resume_tx_[t];
 }
 
-const expr&
-SBQueue::resume_tx(unsigned int t) const {
+const expr& SBQueue::resume_tx(unsigned int t) const {
     return resume_tx_[t];
 }
 
-expr&
-SBQueue::pause_rx(unsigned int t) {
+expr& SBQueue::pause_rx(unsigned int t) {
     return pause_rx_[t];
 }
 
-const expr&
-SBQueue::pause_rx(unsigned int t) const {
+const expr& SBQueue::pause_rx(unsigned int t) const {
     return pause_rx_[t];
 }
 
-expr&
-SBQueue::resume_rx(unsigned int t) {
+expr& SBQueue::resume_rx(unsigned int t) {
     return resume_rx_[t];
 }
 
-const expr&
-SBQueue::resume_rx(unsigned int t) const {
+const expr& SBQueue::resume_rx(unsigned int t) const {
     return resume_rx_[t];
 }
 
-expr&
-SBQueue::sender_paused(unsigned int t) {
+expr& SBQueue::sender_paused(unsigned int t) {
     return sender_paused_[t];
 }
 
-const expr&
-SBQueue::sender_paused(unsigned int t) const {
+const expr& SBQueue::sender_paused(unsigned int t) const {
     return sender_paused_[t];
 }

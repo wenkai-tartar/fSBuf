@@ -74,11 +74,11 @@ void SharedBufferPoint::add_in_queue_constrs() {
             }
 
             snprintf(constr_name, sizeof(constr_name), "sb_boundary_enq_from_demand_q%u_t%u", q, t);
-            // A boundary ingress packet arrives on this interface exactly when demand is present and
-            // the delayed sender-visible pause state is clear.
-            new_constr_map.insert(named_constr(
-                constr_name,
-                net_ctx.pkt2val(inq->enqs(0)[t]) == (demand_t > 0 && !inq->sender_paused(t))));
+            // A boundary ingress packet arrives on this interface exactly when demand is present
+            // and the delayed sender-visible pause state is clear.
+            new_constr_map.insert(named_constr(constr_name,
+                                               net_ctx.pkt2val(inq->enqs(0)[t]) ==
+                                                   (demand_t > 0 && !inq->sender_paused(t))));
         }
     }
 
@@ -102,7 +102,8 @@ void SharedBufferPoint::add_out_queue_constrs() {
                 // on this boundary egress queue.
                 new_constr_map.insert(named_constr(constr_name, !outq->pause_tx(t)));
 
-                snprintf(constr_name, sizeof(constr_name), "sb_boundary_resume_false_e%u_t%u", e, t);
+                snprintf(
+                    constr_name, sizeof(constr_name), "sb_boundary_resume_false_e%u_t%u", e, t);
                 // Boundary environment is configured quiescent, so no downstream XON is injected on
                 // this boundary egress queue.
                 new_constr_map.insert(named_constr(constr_name, !outq->resume_tx(t)));
