@@ -309,12 +309,32 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
     const unsigned int in_cnt = (unsigned int) in_queues.size();
     const unsigned int eg_cnt = (unsigned int) out_queues.size();
     const unsigned int slot_cnt = sb_info_.buffer_slot_cnt;
+    const unsigned int ingress_pool_cap_cnt = ingress_pool_cap();
     const unsigned int micro_steps = micro_step_cnt();
     const unsigned int k_states = micro_steps + 1;
     char constr_name[180];
 
     // Scaffold only: keep the new QM safe and deterministic until shared-buffer
     // semantics are migrated out of SharedBufferPoint.
+    for (unsigned int q = 0; q < in_cnt; q++) {
+        if (total_time > 0) {
+            SBQueue* inq = ingress_sb_queue(q);
+
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_ingress_paused_init_q%u", id.c_str(), q);
+            // Shared-buffer ingress starts resumed.
+            constr_map.insert(named_constr(constr_name, !ingress_paused_[q][0]));
+            snprintf(constr_name, sizeof(constr_name), "%s_ingress_pause_tx_tail_q%u", id.c_str(), q);
+            // The last slot has no modeled next slot inside this horizon, so we suppress new
+            // pause emission here.
+            constr_map.insert(named_constr(constr_name, !inq->pause_tx(total_time - 1)));
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_ingress_resume_tx_tail_q%u", id.c_str(), q);
+            // Likewise suppress resume emission in the terminal slot of the horizon.
+            constr_map.insert(named_constr(constr_name, !inq->resume_tx(total_time - 1)));
+        }
+    }
+
     for (unsigned int t = 0; t < total_time; t++) {
         for (unsigned int q = 0; q < in_cnt; q++) {
             SBQueue* inq = ingress_sb_queue(q);
@@ -322,32 +342,6 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             snprintf(
                 constr_name, sizeof(constr_name), "%s_input_deq_zero_q%u_t%u", id.c_str(), q, t);
             constr_map.insert(named_constr(constr_name, in_queues[q]->deq_cnt(t) == 0));
-
-            snprintf(constr_name,
-                     sizeof(constr_name),
-                     "%s_ingress_paused_false_q%u_t%u",
-                     id.c_str(),
-                     q,
-                     t);
-            constr_map.insert(named_constr(constr_name, !ingress_paused_[q][t]));
-
-            snprintf(constr_name,
-                     sizeof(constr_name),
-                     "%s_ingress_pause_tx_write_q%u_t%u",
-                     id.c_str(),
-                     q,
-                     t);
-            // Scaffold path: this switch emits no pause on any ingress-facing SBQueue yet.
-            constr_map.insert(named_constr(constr_name, inq->pause_tx(t) == net_ctx.bool_val(false)));
-            snprintf(constr_name,
-                     sizeof(constr_name),
-                     "%s_ingress_resume_tx_write_q%u_t%u",
-                     id.c_str(),
-                     q,
-                     t);
-            // Scaffold path: this switch emits no resume on any ingress-facing SBQueue yet.
-            constr_map.insert(
-                named_constr(constr_name, inq->resume_tx(t) == net_ctx.bool_val(false)));
 
             for (unsigned int k = 0; k < micro_steps; k++) {
                 snprintf(constr_name,
@@ -401,6 +395,47 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 constr_map.insert(named_constr(constr_name, headroom_pool_occ_[q][t][k] == 0));
+            }
+
+            if (t + 1 < total_time) {
+                expr in_end = ingress_pool_occ_[q][t][micro_steps];
+                expr in_total_end = ingress_pool_total_occ_[t][micro_steps];
+                expr hdr_end = headroom_pool_occ_[q][t][micro_steps];
+                // TODO(shared-buffer-switch): Parameterize per-ingress alpha. Current scaffold
+                // uses alpha=1 so threshold equals remaining ingress-pool credits.
+                expr gamma_q_end = net_ctx.int_val((int) ingress_pool_cap_cnt) - in_total_end;
+                expr xoff_trig = in_end >= gamma_q_end;
+                expr xon_trig = ingress_paused_[q][t] && (hdr_end == 0) && (in_end < gamma_q_end);
+                expr paused_next = (ingress_paused_[q][t] || xoff_trig) && !xon_trig;
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_ingress_paused_handoff_q%u_t%u",
+                         id.c_str(),
+                         q,
+                         t);
+                // Pause state for the next slot is derived from the end-of-slot occupancies.
+                constr_map.insert(named_constr(constr_name, ingress_paused_[q][t + 1] == paused_next));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_ingress_pause_tx_evt_q%u_t%u",
+                         id.c_str(),
+                         q,
+                         t);
+                // Emit XOFF exactly on a resumed->paused transition.
+                constr_map.insert(
+                    named_constr(constr_name, inq->pause_tx(t) == (!ingress_paused_[q][t] && paused_next)));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_ingress_resume_tx_evt_q%u_t%u",
+                         id.c_str(),
+                         q,
+                         t);
+                // Emit XON exactly on a paused->resumed transition.
+                constr_map.insert(
+                    named_constr(constr_name, inq->resume_tx(t) == (ingress_paused_[q][t] && !paused_next)));
             }
         }
 
