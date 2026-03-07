@@ -441,6 +441,8 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 expr dst_eg = net_ctx.pkt2meta1(pkt) % net_ctx.int_val((int) eg_cnt);
                 expr has_ing_credit = ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt;
                 expr has_hdr_credit = headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt;
+                expr has_eg_credit =
+                    egress_lossless_pool_total_occ_[t][k] < (int) egress_lossless_pool_cap_cnt;
                 expr ingress_can_admit =
                     (!ingress_paused_[q][t] && has_ing_credit) ||
                     (ingress_paused_[q][t] && has_hdr_credit);
@@ -467,6 +469,19 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                     route_cases.push_back(
                         implies(has_enq && route_to_e,
                                 admit_[q][t][k] == (admit_in_[q][t][k] && admit_e_[e][t][k])));
+
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_admit_e_route_credit_q%u_e%u_t%u_k%u",
+                             id.c_str(),
+                             q,
+                             e,
+                             t,
+                             k);
+                    // On the routed egress, admission is gated by egress-lossless pool credit.
+                    constr_map.insert(named_constr(
+                        constr_name,
+                        implies(has_enq && route_to_e, admit_e_[e][t][k] == has_eg_credit)));
 
                     snprintf(constr_name,
                              sizeof(constr_name),

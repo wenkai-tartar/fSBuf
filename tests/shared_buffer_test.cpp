@@ -105,9 +105,9 @@ bool test_shared_buffer_egress_rate_limit() {
   solver_res_t result = sw->satisfy_query();
   cout << result << endl;
 
-  // CENQ tracks ingress arrivals (enqs), so egress serialization alone does not
-  // force this query to be UNSAT.
-  return result == solver_res_t::SAT;
+  // With egress-side admit gating, a slow egress can exhaust egress-lossless credit
+  // and trigger upstream backpressure, so cumulative ingress arrivals need not reach 4.
+  return result == solver_res_t::UNSAT;
 }
 
 void SharedBufferTest::add_to_runner(TestRunner *runner) {
