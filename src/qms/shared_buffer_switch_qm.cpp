@@ -768,6 +768,21 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 constr_map.insert(named_constr(
                     constr_name,
                     implies(cand, buf_stamp_[b][t][deq_k] >= min_stamp_e_[e][t])));
+
+                if (outq->max_enq() > 0) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_output_pkt_from_read_e%u_b%u_t%u",
+                             id.c_str(),
+                             e,
+                             b,
+                             t);
+                    // If egress e reads slot b, the coarse-step output packet equals that slot's
+                    // packet identity.
+                    constr_map.insert(named_constr(
+                        constr_name,
+                        implies(read_by_e, outq->enqs(0)[t] == buf_pkt_[b][t][deq_k])));
+                }
             }
 
             snprintf(constr_name, sizeof(constr_name), "%s_has_pkt_e_def_e%u_t%u", id.c_str(), e, t);
@@ -827,6 +842,16 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             constr_map.insert(
                 named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
 
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_single_read_per_egress_e%u_t%u_k%u",
+                     id.c_str(),
+                     e,
+                     t,
+                     deq_k);
+            // Each egress serves at most one packet per slot in the dequeue micro-step.
+            constr_map.insert(named_constr(constr_name, reads_this_e_t_sum <= int1));
+
             unsigned int ser_factor = egress_serialization_factor(e);
             for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
                 snprintf(constr_name,
@@ -844,7 +869,19 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                     implies(outq->deq_cnt(t) > 0, outq->deq_cnt(t + dt) == 0)));
             }
 
-            for (unsigned int i = 0; i < outq->max_enq(); i++) {
+            if (outq->max_enq() > 0) {
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_output_null_when_no_read_e%u_t%u",
+                         id.c_str(),
+                         e,
+                         t);
+                // If egress e reads no slot in this slot, its coarse-step output packet is null.
+                constr_map.insert(named_constr(
+                    constr_name,
+                    implies(reads_this_e_t_sum == int0, outq->enqs(0)[t] == net_ctx.null_pkt())));
+            }
+            for (unsigned int i = 1; i < outq->max_enq(); i++) {
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_output_null_e%u_i%u_t%u",
@@ -852,6 +889,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          e,
                          i,
                          t);
+                // Shared-buffer switch emits at most one packet per egress per slot.
                 constr_map.insert(named_constr(constr_name, outq->enqs(i)[t] == net_ctx.null_pkt()));
             }
         }
