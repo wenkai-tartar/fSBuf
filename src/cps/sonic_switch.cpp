@@ -7,7 +7,7 @@
 
 #include "sonic_switch.hpp"
 
-#include "shared_buffer_seq_qm.hpp"
+#include "shared_buffer_switch_qm.hpp"
 
 #include <sstream>
 
@@ -36,12 +36,26 @@ void SONiCSwitch::add_nodes() {
     out_info.meta = 0;
     out_info.type = queue_t::SB_EGRESS;
 
+    SharedBufferSwitchInfo switch_info;
+    switch_info.buffer_slot_cnt = sb_info.buffer_slot_cnt;
+    switch_info.ingress_pool_size = sb_info.ingress_pool_size;
+    switch_info.headroom_pool_size = sb_info.headroom_pool_size;
+    switch_info.egress_lossless_pool_size = sb_info.egress_lossless_pool_size;
+    switch_info.ingress_ser_factor = sb_info.ingress_ser_factor;
+    switch_info.egress_ser_factor = sb_info.egress_ser_factor;
+    switch_info.timing_mode =
+        (sb_info.timing_mode == SharedBufferPointInfo::TimingMode::DEQ_FIRST)
+            ? SharedBufferSwitchInfo::TimingMode::DEQ_FIRST
+            : SharedBufferSwitchInfo::TimingMode::ENQ_FIRST;
+
     cid_t m_id = "SB_CORE";
-    SharedBufferSeqQM* sb_qm = new SharedBufferSeqQM(m_id,
-                                                     total_time,
-                                                     vector<QueueInfo>(ingress_queue_cnt_, in_info),
-                                                     vector<QueueInfo>(port_cnt_, out_info),
-                                                     net_ctx);
+    SharedBufferSwitchQM* sb_qm =
+        new SharedBufferSwitchQM(m_id,
+                                 total_time,
+                                 vector<QueueInfo>(ingress_queue_cnt_, in_info),
+                                 vector<QueueInfo>(port_cnt_, out_info),
+                                 switch_info,
+                                 net_ctx);
     nodes.push_back(m_id);
     id_to_qm[m_id] = sb_qm;
 }

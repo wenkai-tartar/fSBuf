@@ -1341,161 +1341,87 @@ void SharedBufferPoint::add_cross_time_step_constrs(map<string, expr>& new_const
 }
 
 void SharedBufferPoint::add_in_queue_constrs() {
-    if (!shared_queue_domains_initialized_) init_shared_queue_domains();
     ContentionPoint::add_in_queue_constrs();
-
-    const unsigned int in_cnt = (unsigned int) sb_ingress_queues_.size();
-    const unsigned int eg_cnt = (unsigned int) sb_egress_queues_.size();
-    if (in_cnt == 0 || eg_cnt == 0) return;
-
-    if (!shared_vars_initialized_) init_shared_vars();
-
     map<string, expr> new_constr_map;
-    add_micro_step_constrs(new_constr_map);
-    add_cross_time_step_constrs(new_constr_map);
+    char constr_name[160];
+
+    for (unsigned int q = 0; q < in_queues.size(); q++) {
+        SBQueue* inq = dynamic_cast<SBQueue*>(in_queues[q]);
+        if (inq == nullptr) {
+            throw runtime_error("SharedBufferPoint boundary ingress queue is not an SBQueue");
+        }
+
+        Metric* demand_metric = inq->get_metric(metric_t::DEMAND);
+        if (demand_metric == nullptr) continue;
+
+        unsigned int demand_ub = sb_info.max_demand_per_t;
+        if (inq->max_enq() < demand_ub) demand_ub = inq->max_enq();
+
+        for (unsigned int t = 0; t < total_time; t++) {
+            expr demand_t = demand_metric->val(t).second;
+            if (t > 0) {
+                demand_t = demand_t - demand_metric->val(t - 1).second;
+            }
+
+            snprintf(constr_name, sizeof(constr_name), "sb_boundary_demand_lb_q%u_t%u", q, t);
+            // Per-slot external demand must be non-negative.
+            new_constr_map.insert(named_constr(constr_name, demand_t >= 0));
+            snprintf(constr_name, sizeof(constr_name), "sb_boundary_demand_ub_q%u_t%u", q, t);
+            // Per-slot external demand is capped by configured max_demand_per_t and queue max_enq.
+            new_constr_map.insert(named_constr(constr_name, demand_t <= (int) demand_ub));
+
+            unsigned int ser_factor = ingress_serialization_factor(q);
+            for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
+                expr demand_next = demand_metric->val(t + dt).second;
+                if (t + dt > 0) {
+                    demand_next = demand_next - demand_metric->val(t + dt - 1).second;
+                }
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "sb_boundary_demand_cooldown_q%u_t%u_dt%u",
+                         q,
+                         t,
+                         dt);
+                // If boundary sender injects in slot t, it cannot inject again for the next S_q-1
+                // slots.
+                new_constr_map.insert(
+                    named_constr(constr_name, implies(demand_t > 0, demand_next == 0)));
+            }
+
+            snprintf(constr_name, sizeof(constr_name), "sb_boundary_enq_from_demand_q%u_t%u", q, t);
+            // A boundary ingress packet arrives on this interface exactly when demand is present and
+            // the delayed sender-visible pause state is clear.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                net_ctx.pkt2val(inq->enqs(0)[t]) == (demand_t > 0 && !inq->sender_paused(t))));
+        }
+    }
+
     add_constr_from_map(new_constr_map);
 }
 
 void SharedBufferPoint::add_out_queue_constrs() {
-    if (!shared_queue_domains_initialized_) init_shared_queue_domains();
-
-    const unsigned int eg_cnt = (unsigned int) sb_egress_queues_.size();
-    const unsigned int slot_cnt = sb_info.buffer_slot_cnt;
-    const unsigned int deq_k = deq_step_idx();
-    if (eg_cnt == 0 || slot_cnt == 0) return;
-
-    const expr int0 = net_ctx.int_val(0);
-    const expr int1 = net_ctx.int_val(1);
-    auto b2i = [&](const expr& b) { return ite(b, int1, int0); };
-
-    char constr_name[160];
     map<string, expr> new_constr_map;
+    char constr_name[160];
 
-    for (unsigned int e = 0; e < eg_cnt; e++) {
-        Queue* outq = sb_egress_queues_[e];
-        for (unsigned int t = 0; t < total_time; t++) {
-            expr reads_this_e_t_sum = int0;
-            expr_vector cand_vec(net_ctx.z3_ctx());
-            expr_vector min_witness_vec(net_ctx.z3_ctx());
-
-            for (unsigned int b = 0; b < slot_cnt; b++) {
-                expr cand = net_ctx.pkt2val(buf_pkt_[b][t][deq_k]) &&
-                            (buf_e_[b][t][deq_k] == (int) e);
-                cand_vec.push_back(cand);
-                min_witness_vec.push_back(cand && (buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t]));
-
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "sb_read_requires_nonempty_e%u_b%u_t%u_k%u",
-                         e,
-                         b,
-                         t,
-                         deq_k);
-                // A read action can only target a slot that is currently occupied.
-                new_constr_map.insert(
-                    named_constr(constr_name,
-                                 implies(read_slot_[e][b][t][deq_k],
-                                         net_ctx.pkt2val(buf_pkt_[b][t][deq_k]))));
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "sb_read_requires_match_egress_e%u_b%u_t%u_k%u",
-                         e,
-                         b,
-                         t,
-                         deq_k);
-                // A read action by egress e can only target a slot owned by egress e.
-                new_constr_map.insert(named_constr(constr_name,
-                                                   implies(read_slot_[e][b][t][deq_k],
-                                                           buf_e_[b][t][deq_k] == (int) e)));
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "sb_read_requires_hol_stamp_e%u_b%u_t%u_k%u",
-                         e,
-                         b,
-                         t,
-                         deq_k);
-                // A read action by egress e must target an HOL packet (minimum timestamp among e's
-                // candidates).
-                new_constr_map.insert(
-                    named_constr(constr_name,
-                                 implies(read_slot_[e][b][t][deq_k],
-                                         buf_stamp_[b][t][deq_k] == min_stamp_e_[e][t])));
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "sb_min_stamp_lb_e%u_b%u_t%u_k%u",
-                         e,
-                         b,
-                         t,
-                         deq_k);
-                // Minimum timestamp is a lower bound of each readable candidate's timestamp.
-                new_constr_map.insert(
-                    named_constr(constr_name,
-                                 implies(cand, buf_stamp_[b][t][deq_k] >= min_stamp_e_[e][t])));
-                reads_this_e_t_sum = reads_this_e_t_sum + b2i(read_slot_[e][b][t][deq_k]);
+    if (sb_info.boundary_egress_ctrl_default_false) {
+        for (unsigned int e = 0; e < out_queues.size(); e++) {
+            SBQueue* outq = dynamic_cast<SBQueue*>(out_queues[e]);
+            if (outq == nullptr) {
+                throw runtime_error("SharedBufferPoint boundary egress queue is not an SBQueue");
             }
 
-            snprintf(constr_name, sizeof(constr_name), "sb_has_pkt_e_def_e%u_t%u", e, t);
-            // has_pkt_e is true iff egress e has at least one readable candidate at the deq
-            // micro-step.
-            new_constr_map.insert(named_constr(constr_name, has_pkt_e_[e][t] == mk_or(cand_vec)));
-            snprintf(constr_name, sizeof(constr_name), "sb_work_conserving_nonempty_e%u_t%u", e, t);
-            // Work-conserving service: if egress e has packets and is not paused by downstream
-            // control, it must dequeue in this slot.
-            new_constr_map.insert(named_constr(constr_name,
-                                               implies(has_pkt_e_[e][t] && !boundary_egress_paused_[e][t],
-                                                       outq->deq_cnt(t) > 0)));
-            snprintf(
-                constr_name, sizeof(constr_name), "sb_paused_or_empty_blocks_deq_e%u_t%u", e, t);
-            // If egress e is empty or paused by downstream control, dequeue count must be zero.
-            new_constr_map.insert(named_constr(constr_name,
-                                               implies(!has_pkt_e_[e][t] || boundary_egress_paused_[e][t],
-                                                       outq->deq_cnt(t) == 0)));
-            snprintf(constr_name, sizeof(constr_name), "sb_min_stamp_empty_e%u_t%u", e, t);
-            // If no candidate exists for egress e, min_stamp is set to -1.
-            new_constr_map.insert(
-                named_constr(constr_name, implies(!has_pkt_e_[e][t], min_stamp_e_[e][t] == -1)));
-            snprintf(constr_name, sizeof(constr_name), "sb_min_stamp_lb_e%u_t%u", e, t);
-            // min_stamp lower bound.
-            // TODO: this may be redundant
-            new_constr_map.insert(named_constr(constr_name, min_stamp_e_[e][t] >= -1));
-            snprintf(constr_name, sizeof(constr_name), "sb_min_stamp_witness_e%u_t%u", e, t);
-            // If candidates exist, at least one candidate has timestamp equal to min_stamp.
-            new_constr_map.insert(
-                named_constr(constr_name, implies(has_pkt_e_[e][t], mk_or(min_witness_vec))));
-
-            snprintf(constr_name, sizeof(constr_name), "sb_read_deq_eq_e%u_t%u_k%u", e, t, deq_k);
-            // Read count for this egress equals out-queue deq count at time t.
-            new_constr_map.insert(
-                named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
-
-            unsigned int ser_factor = egress_serialization_factor(e);
-            for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "sb_deq_cooldown_e%u_t%u_dt%u_k%u",
-                         e,
-                         t,
-                         dt,
-                         deq_k);
-                // Cooldown semantics: if egress e dequeues at slot t, it cannot dequeue in the next
-                // S_e-1 slots.
-                new_constr_map.insert(
-                    named_constr(constr_name,
-                                 implies(outq->deq_cnt(t) > 0, outq->deq_cnt(t + dt) == 0)));
+            for (unsigned int t = 0; t < total_time; t++) {
+                snprintf(constr_name, sizeof(constr_name), "sb_boundary_pause_false_e%u_t%u", e, t);
+                // Boundary environment is configured quiescent, so no downstream XOFF is injected
+                // on this boundary egress queue.
+                new_constr_map.insert(named_constr(constr_name, !outq->pause_tx(t)));
+                snprintf(constr_name, sizeof(constr_name), "sb_boundary_resume_false_e%u_t%u", e, t);
+                // Boundary environment is configured quiescent, so no downstream XON is injected on
+                // this boundary egress queue.
+                new_constr_map.insert(named_constr(constr_name, !outq->resume_tx(t)));
             }
-        }
-    }
-
-    for (unsigned int b = 0; b < slot_cnt; b++) {
-        for (unsigned int t = 0; t < total_time; t++) {
-            expr slot_readers_sum = int0;
-            for (unsigned int e = 0; e < eg_cnt; e++) {
-                slot_readers_sum = slot_readers_sum + b2i(read_slot_[e][b][t][deq_k]);
-            }
-            snprintf(
-                constr_name, sizeof(constr_name), "sb_slot_single_reader_b%u_t%u_k%u", b, t, deq_k);
-            // A slot can be read by at most one egress in the deq micro-step.
-            new_constr_map.insert(named_constr(constr_name, slot_readers_sum <= 1));
         }
     }
 
