@@ -369,6 +369,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             constr_map.insert(named_constr(constr_name, in_queues[q]->deq_cnt(t) == 0));
 
             for (unsigned int k = 0; k < micro_steps; k++) {
+                const int active_q = ingress_queue_for_step(k);
                 snprintf(constr_name,
                          sizeof(constr_name),
                          "%s_admit_in_false_q%u_t%u_k%u",
@@ -385,22 +386,89 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                          t,
                          k);
                 constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
+                if (active_q < 0 || (unsigned int) active_q != q) {
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_alloc_in_false_q%u_t%u_k%u",
+                             id.c_str(),
+                             q,
+                             t,
+                             k);
+                    // Inactive ingress queues cannot allocate ingress-pool credits.
+                    constr_map.insert(named_constr(constr_name, !alloc_in_[q][t][k]));
+                    snprintf(constr_name,
+                             sizeof(constr_name),
+                             "%s_alloc_hdr_false_q%u_t%u_k%u",
+                             id.c_str(),
+                             q,
+                             t,
+                             k);
+                    // Inactive ingress queues cannot allocate headroom credits.
+                    constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
+                    continue;
+                }
+
                 snprintf(constr_name,
                          sizeof(constr_name),
-                         "%s_alloc_in_false_q%u_t%u_k%u",
+                         "%s_alloc_in_by_paused_q%u_t%u_k%u",
                          id.c_str(),
                          q,
                          t,
                          k);
-                constr_map.insert(named_constr(constr_name, !alloc_in_[q][t][k]));
+                // Admitted packets use ingress-pool accounting exactly when this ingress is not
+                // paused in slot t.
+                constr_map.insert(named_constr(
+                    constr_name, alloc_in_[q][t][k] == (admit_[q][t][k] && !ingress_paused_[q][t])));
+
                 snprintf(constr_name,
                          sizeof(constr_name),
-                         "%s_alloc_hdr_false_q%u_t%u_k%u",
+                         "%s_alloc_hdr_by_paused_q%u_t%u_k%u",
                          id.c_str(),
                          q,
                          t,
                          k);
-                constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
+                // Admitted packets use headroom accounting exactly when this ingress is paused in
+                // slot t.
+                constr_map.insert(named_constr(
+                    constr_name, alloc_hdr_[q][t][k] == (admit_[q][t][k] && ingress_paused_[q][t])));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_alloc_in_requires_credit_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                // Ingress-pool allocation requires remaining global ingress-pool credit at the
+                // current micro-state.
+                constr_map.insert(named_constr(
+                    constr_name,
+                    implies(alloc_in_[q][t][k], ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt)));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_alloc_hdr_requires_credit_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                // Headroom allocation requires remaining per-ingress headroom credit at the
+                // current micro-state.
+                constr_map.insert(named_constr(
+                    constr_name,
+                    implies(alloc_hdr_[q][t][k], headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt)));
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_alloc_cover_admit_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                // Every admitted packet must be accounted by exactly one of ingress/headroom
+                // allocation paths.
+                constr_map.insert(named_constr(
+                    constr_name, admit_[q][t][k] == (alloc_in_[q][t][k] || alloc_hdr_[q][t][k])));
             }
 
             if (t + 1 < total_time) {
