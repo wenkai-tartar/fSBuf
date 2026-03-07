@@ -53,6 +53,8 @@ public:
 private:
     void add_proc_vars(NetContext& net_ctx) override;
     void add_scaffold_constrs(NetContext& net_ctx, map<string, expr>& constr_map);
+    SBQueue* ingress_sb_queue(unsigned int q);
+    SBQueue* egress_sb_queue(unsigned int e);
 
     SharedBufferSwitchInfo sb_info_;
 

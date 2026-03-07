@@ -8,6 +8,7 @@
 #include "shared_buffer_switch_qm.hpp"
 
 #include <cstdio>
+#include <stdexcept>
 
 SharedBufferSwitchQM::SharedBufferSwitchQM(cid_t id,
                                            unsigned int total_time,
@@ -77,6 +78,24 @@ SharedBufferSwitchQM::ingress_paused(unsigned int q, unsigned int t) const {
 const expr&
 SharedBufferSwitchQM::slot_pkt(unsigned int b, unsigned int t, unsigned int k) const {
     return buf_pkt_[b][t][k];
+}
+
+SBQueue*
+SharedBufferSwitchQM::ingress_sb_queue(unsigned int q) {
+    SBQueue* sbq = dynamic_cast<SBQueue*>(in_queues[q]);
+    if (sbq == nullptr) {
+        throw runtime_error("SharedBufferSwitchQM ingress queue is not an SBQueue");
+    }
+    return sbq;
+}
+
+SBQueue*
+SharedBufferSwitchQM::egress_sb_queue(unsigned int e) {
+    SBQueue* sbq = dynamic_cast<SBQueue*>(out_queues[e]);
+    if (sbq == nullptr) {
+        throw runtime_error("SharedBufferSwitchQM egress queue is not an SBQueue");
+    }
+    return sbq;
 }
 
 void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
@@ -298,34 +317,104 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
     // semantics are migrated out of SharedBufferPoint.
     for (unsigned int t = 0; t < total_time; t++) {
         for (unsigned int q = 0; q < in_cnt; q++) {
-            snprintf(constr_name, sizeof(constr_name), "%s_input_deq_zero_q%u_t%u", id.c_str(), q, t);
+            SBQueue* inq = ingress_sb_queue(q);
+
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_input_deq_zero_q%u_t%u", id.c_str(), q, t);
             constr_map.insert(named_constr(constr_name, in_queues[q]->deq_cnt(t) == 0));
 
-            snprintf(constr_name, sizeof(constr_name), "%s_ingress_paused_false_q%u_t%u", id.c_str(), q, t);
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_ingress_paused_false_q%u_t%u",
+                     id.c_str(),
+                     q,
+                     t);
             constr_map.insert(named_constr(constr_name, !ingress_paused_[q][t]));
 
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_ingress_pause_tx_write_q%u_t%u",
+                     id.c_str(),
+                     q,
+                     t);
+            // Scaffold path: this switch emits no pause on any ingress-facing SBQueue yet.
+            constr_map.insert(named_constr(constr_name, inq->pause_tx(t) == net_ctx.bool_val(false)));
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_ingress_resume_tx_write_q%u_t%u",
+                     id.c_str(),
+                     q,
+                     t);
+            // Scaffold path: this switch emits no resume on any ingress-facing SBQueue yet.
+            constr_map.insert(
+                named_constr(constr_name, inq->resume_tx(t) == net_ctx.bool_val(false)));
+
             for (unsigned int k = 0; k < micro_steps; k++) {
-                snprintf(constr_name, sizeof(constr_name), "%s_admit_in_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_admit_in_false_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, !admit_in_[q][t][k]));
-                snprintf(constr_name, sizeof(constr_name), "%s_admit_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_admit_false_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, !admit_[q][t][k]));
-                snprintf(constr_name, sizeof(constr_name), "%s_alloc_in_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_alloc_in_false_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, !alloc_in_[q][t][k]));
-                snprintf(constr_name, sizeof(constr_name), "%s_alloc_hdr_false_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_alloc_hdr_false_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, !alloc_hdr_[q][t][k]));
             }
 
             for (unsigned int k = 0; k < k_states; k++) {
-                snprintf(constr_name, sizeof(constr_name), "%s_ingress_pool_zero_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_ingress_pool_zero_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, ingress_pool_occ_[q][t][k] == 0));
-                snprintf(constr_name, sizeof(constr_name), "%s_headroom_pool_zero_q%u_t%u_k%u", id.c_str(), q, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_headroom_pool_zero_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, headroom_pool_occ_[q][t][k] == 0));
             }
         }
 
         for (unsigned int e = 0; e < eg_cnt; e++) {
+            SBQueue* out_sbq = egress_sb_queue(e);
+
             for (unsigned int k = 0; k < micro_steps; k++) {
-                snprintf(constr_name, sizeof(constr_name), "%s_admit_e_false_e%u_t%u_k%u", id.c_str(), e, t, k);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_admit_e_false_e%u_t%u_k%u",
+                         id.c_str(),
+                         e,
+                         t,
+                         k);
                 constr_map.insert(named_constr(constr_name, !admit_e_[e][t][k]));
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -354,8 +443,22 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             }
 
             Queue* outq = out_queues[e];
+            snprintf(constr_name, sizeof(constr_name), "%s_egress_read_sender_paused_e%u_t%u", id.c_str(), e, t);
+            // Scaffold path: if the downstream-facing SBQueue reports paused, this egress cannot
+            // perform any dequeue/send action in slot t.
+            constr_map.insert(
+                named_constr(constr_name, implies(out_sbq->sender_paused(t), outq->deq_cnt(t) == 0)));
+            snprintf(constr_name, sizeof(constr_name), "%s_egress_deq_zero_e%u_t%u", id.c_str(), e, t);
+            // Scaffold path currently emits no packet even when the egress-facing SBQueue is open.
+            constr_map.insert(named_constr(constr_name, outq->deq_cnt(t) == 0));
             for (unsigned int i = 0; i < outq->max_enq(); i++) {
-                snprintf(constr_name, sizeof(constr_name), "%s_output_null_e%u_i%u_t%u", id.c_str(), e, i, t);
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_output_null_e%u_i%u_t%u",
+                         id.c_str(),
+                         e,
+                         i,
+                         t);
                 constr_map.insert(named_constr(constr_name, outq->enqs(i)[t] == net_ctx.null_pkt()));
             }
         }
