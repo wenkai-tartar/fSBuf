@@ -998,6 +998,9 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                      e,
                      t,
                      deq_k);
+            // TODO(shared-buffer): outq->deq_cnt(t) is only a compatibility counter for the
+            // number of packets served from shared buffer at slot t. Remove egress-queue-local
+            // deq_cnt semantics once output-side interfaces stop mirroring Queue counters.
             // The number of slots read for egress e equals its interface dequeue count.
             constr_map.insert(named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
 
