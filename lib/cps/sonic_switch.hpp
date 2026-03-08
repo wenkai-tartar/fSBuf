@@ -17,15 +17,11 @@ using namespace std;
 
 class SONiCSwitch : public SharedBufferPoint {
 public:
-    SONiCSwitch(unsigned int port_cnt,
-                unsigned int ingress_queue_cnt,
-                unsigned int total_time,
+    SONiCSwitch(unsigned int total_time,
                 SharedBufferEnvInfo env_info,
                 SharedBufferSwitchInfo switch_info);
 
 private:
-    unsigned int port_cnt_;
-    unsigned int ingress_queue_cnt_;
     SharedBufferSwitchInfo switch_info_;
 
     vector<CEnq*> cenq_;

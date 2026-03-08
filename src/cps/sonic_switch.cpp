@@ -10,20 +10,21 @@
 #include "shared_buffer_switch_qm.hpp"
 
 #include <sstream>
+#include <stdexcept>
 
-SONiCSwitch::SONiCSwitch(unsigned int port_cnt,
-                         unsigned int ingress_queue_cnt,
-                         unsigned int total_time,
+SONiCSwitch::SONiCSwitch(unsigned int total_time,
                          SharedBufferEnvInfo env_info,
                          SharedBufferSwitchInfo switch_info):
 SharedBufferPoint(total_time, env_info),
-port_cnt_(port_cnt),
-ingress_queue_cnt_(ingress_queue_cnt),
 switch_info_(switch_info) {
     init();
 }
 
 void SONiCSwitch::add_nodes() {
+    if (switch_info_.ingress_queue_cnt == 0 || switch_info_.egress_queue_cnt == 0) {
+        throw runtime_error("SONiCSwitch requires non-zero ingress_queue_cnt and egress_queue_cnt");
+    }
+
     QueueInfo in_info{};
     in_info.size = MAX_QUEUE_SIZE;
     in_info.max_enq = 1;
@@ -41,9 +42,10 @@ void SONiCSwitch::add_nodes() {
     cid_t m_id = "SB_CORE";
     SharedBufferSwitchQM* sb_qm = new SharedBufferSwitchQM(m_id,
                                                            total_time,
-                                                           vector<QueueInfo>(ingress_queue_cnt_,
+                                                           vector<QueueInfo>(switch_info_.ingress_queue_cnt,
                                                                              in_info),
-                                                           vector<QueueInfo>(port_cnt_, out_info),
+                                                           vector<QueueInfo>(switch_info_.egress_queue_cnt,
+                                                                             out_info),
                                                            switch_info_,
                                                            net_ctx);
     nodes.push_back(m_id);
@@ -119,7 +121,8 @@ void SONiCSwitch::add_metrics() {
 
 string SONiCSwitch::cp_model_str(model& m, NetContext& net_ctx, unsigned int t) {
     stringstream ss;
-    ss << "ports=" << port_cnt_ << ", ingress_queues=" << ingress_queue_cnt_ << endl;
+    ss << "ports=" << switch_info_.egress_queue_cnt
+       << ", ingress_queues=" << switch_info_.ingress_queue_cnt << endl;
     ss << "qid: cenq, demand" << endl;
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];

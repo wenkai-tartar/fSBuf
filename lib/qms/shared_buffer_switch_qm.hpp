@@ -18,6 +18,8 @@ struct SharedBufferSwitchInfo {
         ENQ_FIRST = 1,
     };
 
+    unsigned int ingress_queue_cnt = 1;
+    unsigned int egress_queue_cnt = 1;
     unsigned int buffer_slot_cnt = MAX_QUEUE_SIZE;
     unsigned int ingress_pool_size = 0;
     unsigned int headroom_pool_size = 0;
