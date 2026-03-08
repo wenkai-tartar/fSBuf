@@ -11,6 +11,7 @@
 #include "cenq.hpp"
 #include "demand.hpp"
 #include "shared_buffer_point.hpp"
+#include "shared_buffer_switch_qm.hpp"
 
 using namespace std;
 
@@ -19,11 +20,13 @@ public:
     SONiCSwitch(unsigned int port_cnt,
                 unsigned int ingress_queue_cnt,
                 unsigned int total_time,
-                SharedBufferPointInfo info);
+                SharedBufferEnvInfo env_info,
+                SharedBufferSwitchInfo switch_info);
 
 private:
     unsigned int port_cnt_;
     unsigned int ingress_queue_cnt_;
+    SharedBufferSwitchInfo switch_info_;
 
     vector<CEnq*> cenq_;
     vector<Demand*> demand_;
@@ -31,6 +34,7 @@ private:
     void add_nodes() override;
     void add_edges() override;
     void add_metrics() override;
+    void add_in_queue_constrs() override;
 
     string cp_model_str(model& m, NetContext& net_ctx, unsigned int t) override;
 };

@@ -10,16 +10,9 @@
 #include <cstdio>
 #include <stdexcept>
 
-SharedBufferPoint::SharedBufferPoint(unsigned int total_time, SharedBufferPointInfo info):
+SharedBufferPoint::SharedBufferPoint(unsigned int total_time, SharedBufferEnvInfo info):
 ContentionPoint(total_time),
-sb_info(info) {
-}
-
-unsigned int SharedBufferPoint::ingress_serialization_factor(unsigned int q) const {
-    if (q >= sb_info.ingress_ser_factor.size()) return 1;
-    unsigned int f = sb_info.ingress_ser_factor[q];
-    if (f == 0) return 1;
-    return f;
+env_info(info) {
 }
 
 void SharedBufferPoint::add_in_queue_constrs() {
@@ -37,7 +30,7 @@ void SharedBufferPoint::add_in_queue_constrs() {
         Metric* demand_metric = inq->get_metric(metric_t::DEMAND);
         if (demand_metric == nullptr) continue;
 
-        unsigned int demand_ub = sb_info.max_demand_per_t;
+        unsigned int demand_ub = env_info.max_demand_per_t;
         if (inq->max_enq() < demand_ub) demand_ub = inq->max_enq();
 
         for (unsigned int t = 0; t < total_time; t++) {
@@ -53,25 +46,6 @@ void SharedBufferPoint::add_in_queue_constrs() {
             snprintf(constr_name, sizeof(constr_name), "sb_boundary_demand_ub_q%u_t%u", q, t);
             // Per-slot external demand is capped by configured max_demand_per_t and queue max_enq.
             new_constr_map.insert(named_constr(constr_name, demand_t <= (int) demand_ub));
-
-            unsigned int ser_factor = ingress_serialization_factor(q);
-            for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
-                expr demand_next = demand_metric->val(t + dt).second;
-                if (t + dt > 0) {
-                    demand_next = demand_next - demand_metric->val(t + dt - 1).second;
-                }
-
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "sb_boundary_demand_cooldown_q%u_t%u_dt%u",
-                         q,
-                         t,
-                         dt);
-                // If boundary sender injects in slot t, it cannot inject again for the next S_q-1
-                // slots.
-                new_constr_map.insert(
-                    named_constr(constr_name, implies(demand_t > 0, demand_next == 0)));
-            }
 
             snprintf(constr_name, sizeof(constr_name), "sb_boundary_enq_from_demand_q%u_t%u", q, t);
             // A boundary ingress packet arrives on this interface exactly when demand is present
@@ -89,7 +63,7 @@ void SharedBufferPoint::add_out_queue_constrs() {
     map<string, expr> new_constr_map;
     char constr_name[160];
 
-    if (sb_info.boundary_egress_ctrl_default_false) {
+    if (env_info.boundary_egress_ctrl_default_false) {
         for (unsigned int e = 0; e < out_queues.size(); e++) {
             SBQueue* outq = dynamic_cast<SBQueue*>(out_queues[e]);
             if (outq == nullptr) {
