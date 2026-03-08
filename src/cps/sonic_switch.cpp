@@ -121,7 +121,7 @@ void SONiCSwitch::add_metrics() {
 
 string SONiCSwitch::cp_model_str(model& m, NetContext& net_ctx, unsigned int t) {
     stringstream ss;
-    ss << "ports=" << switch_info_.egress_queue_cnt
+    ss << "egress_queues=" << switch_info_.egress_queue_cnt
        << ", ingress_queues=" << switch_info_.ingress_queue_cnt << endl;
     ss << "qid: cenq, demand" << endl;
     for (unsigned int q = 0; q < in_queues.size(); q++) {
