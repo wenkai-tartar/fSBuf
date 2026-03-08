@@ -131,14 +131,27 @@ string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsi
         stringstream ps;
         ps << "[";
         expr meta1 = m.eval(net_ctx.pkt2meta1(pkt), true);
-        if (meta1.is_numeral()) ps << meta1.get_numeral_int();
-        else ps << "-";
+        if (meta1.is_numeral())
+            ps << meta1.get_numeral_int();
+        else
+            ps << "-";
         ps << " ";
         expr meta2 = m.eval(net_ctx.pkt2meta2(pkt), true);
-        if (meta2.is_numeral()) ps << meta2.get_numeral_int();
-        else ps << "-";
+        if (meta2.is_numeral())
+            ps << meta2.get_numeral_int();
+        else
+            ps << "-";
         ps << "]";
         return ps.str();
+    };
+    auto can_emit_now = [&](Queue* outq, unsigned int e, unsigned int t_now) {
+        if (outq->max_enq() == 0) return false;
+
+        unsigned int ser_factor = egress_serialization_factor(e);
+        for (unsigned int dt = 1; dt < ser_factor && dt <= t_now; dt++) {
+            if (eval_bool(net_ctx.pkt2val(outq->enqs(0)[t_now - dt]))) return false;
+        }
+        return true;
     };
 
     ss << "shared-buffer-switch " << id << endl;
@@ -157,15 +170,17 @@ string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsi
     ss << "  egress_ctrl:";
     for (unsigned int e = 0; e < eg_cnt; e++) {
         const SBQueue* outq = egress_sb_queue(e);
+        Queue* out_queue = out_queues[e];
+        bool can_emit = can_emit_now(out_queue, e, t);
         ss << " e" << e << "(sender_paused=" << (eval_bool(outq->sender_paused(t)) ? 1 : 0)
+           << ", can_emit=" << (can_emit ? 1 : 0)
            << ", has_pkt=" << (eval_bool(has_pkt_e_[e][t]) ? 1 : 0)
            << ", min_stamp=" << eval_int(min_stamp_e_[e][t]) << ")";
     }
     ss << endl;
 
     for (unsigned int k = 0; k < k_states; k++) {
-        ss << "  k=" << k
-           << " totals(in=" << eval_int(ingress_pool_total_occ_[t][k])
+        ss << "  k=" << k << " totals(in=" << eval_int(ingress_pool_total_occ_[t][k])
            << ", hdr=" << eval_int(headroom_pool_total_occ_[t][k])
            << ", eg=" << eval_int(egress_lossless_pool_total_occ_[t][k]) << ")" << endl;
 
@@ -190,8 +205,10 @@ string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsi
         if (k < micro_steps) {
             const int active_q = ingress_queue_for_step(k);
             ss << "    actions:";
-            if (active_q >= 0) ss << " active_q=" << active_q;
-            else ss << " deq_step";
+            if (active_q >= 0)
+                ss << " active_q=" << active_q;
+            else
+                ss << " deq_step";
             for (unsigned int q = 0; q < in_cnt; q++) {
                 ss << " q" << q << "(ain=" << (eval_bool(admit_in_[q][t][k]) ? 1 : 0)
                    << ", a=" << (eval_bool(admit_[q][t][k]) ? 1 : 0)
@@ -208,8 +225,7 @@ string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsi
         ss << "    slots:" << endl;
         for (unsigned int b = 0; b < slot_cnt; b++) {
             ss << "      b" << b << ": " << pkt_str(buf_pkt_[b][t][k])
-               << " in=" << eval_int(buf_in_[b][t][k])
-               << " e=" << eval_int(buf_e_[b][t][k])
+               << " in=" << eval_int(buf_in_[b][t][k]) << " e=" << eval_int(buf_e_[b][t][k])
                << " st=" << eval_int(buf_stamp_[b][t][k]);
 
             if (k < micro_steps) {
@@ -445,9 +461,17 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
         }
         return res;
     };
+    auto can_emit_now = [&](Queue* outq, unsigned int e, unsigned int t) -> expr {
+        if (outq->max_enq() == 0) return net_ctx.bool_val(false);
 
-    // Scaffold only: keep the new QM safe and deterministic until shared-buffer
-    // semantics are migrated out of SharedBufferPoint.
+        expr res = net_ctx.bool_val(true);
+        unsigned int ser_factor = egress_serialization_factor(e);
+        for (unsigned int dt = 1; dt < ser_factor && dt <= t; dt++) {
+            res = res && !net_ctx.pkt2val(outq->enqs(0)[t - dt]);
+        }
+        return res;
+    };
+
     if (total_time > 0) {
         // Initial pool ledgers start at zero before the first micro-step.
         for (unsigned int q = 0; q < in_cnt; q++) {
@@ -969,27 +993,34 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             constr_map.insert(
                 named_constr(constr_name, implies(has_pkt_e_[e][t], mk_or(min_witness_vec))));
 
+            expr emitted_pkt = net_ctx.bool_val(false);
+            if (outq->max_enq() > 0) emitted_pkt = net_ctx.pkt2val(outq->enqs(0)[t]);
+            expr can_emit = can_emit_now(outq, e, t);
+
             snprintf(constr_name,
                      sizeof(constr_name),
                      "%s_work_conserving_nonempty_e%u_t%u",
                      id.c_str(),
                      e,
                      t);
-            // A non-paused egress must serve when it has at least one candidate packet.
-            constr_map.insert(named_constr(constr_name,
-                                           implies(has_pkt_e_[e][t] && !out_sbq->sender_paused(t),
-                                                   outq->deq_cnt(t) > 0)));
+            // A non-paused, link-ready egress must emit when it has at least one candidate
+            // packet.
+            constr_map.insert(
+                named_constr(constr_name,
+                             implies(has_pkt_e_[e][t] && !out_sbq->sender_paused(t) && can_emit,
+                                     emitted_pkt)));
 
             snprintf(constr_name,
                      sizeof(constr_name),
-                     "%s_paused_or_empty_blocks_deq_e%u_t%u",
+                     "%s_paused_empty_or_cooldown_blocks_emit_e%u_t%u",
                      id.c_str(),
                      e,
                      t);
-            // A paused or empty egress cannot dequeue in this slot.
-            constr_map.insert(named_constr(constr_name,
-                                           implies(!has_pkt_e_[e][t] || out_sbq->sender_paused(t),
-                                                   outq->deq_cnt(t) == 0)));
+            // A paused, empty, or cooldown-blocked egress cannot emit a packet in this slot.
+            constr_map.insert(
+                named_constr(constr_name,
+                             implies(!has_pkt_e_[e][t] || out_sbq->sender_paused(t) || !can_emit,
+                                     !emitted_pkt)));
 
             snprintf(constr_name,
                      sizeof(constr_name),
@@ -1014,22 +1045,15 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             // Each egress serves at most one packet per slot in the dequeue micro-step.
             constr_map.insert(named_constr(constr_name, reads_this_e_t_sum <= int1));
 
-            unsigned int ser_factor = egress_serialization_factor(e);
-            for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "%s_deq_cooldown_e%u_t%u_dt%u_k%u",
-                         id.c_str(),
-                         e,
-                         t,
-                         dt,
-                         deq_k);
-                // Serialization cooldown: after dequeuing in slot t, egress e cannot dequeue again
-                // for the next S_e-1 slots.
-                constr_map.insert(
-                    named_constr(constr_name,
-                                 implies(outq->deq_cnt(t) > 0, outq->deq_cnt(t + dt) == 0)));
-            }
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_emit_requires_link_ready_e%u_t%u",
+                     id.c_str(),
+                     e,
+                     t);
+            // An emitted packet must respect the link serialization cooldown derived from
+            // previous output events on this egress.
+            constr_map.insert(named_constr(constr_name, implies(emitted_pkt, can_emit)));
 
             if (outq->max_enq() > 0) {
                 snprintf(constr_name,
