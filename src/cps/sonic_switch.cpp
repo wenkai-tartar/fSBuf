@@ -62,7 +62,12 @@ void SONiCSwitch::add_in_queue_constrs() {
     char constr_name[160];
 
     for (unsigned int q = 0; q < in_queues.size(); q++) {
-        Metric* demand_metric = in_queues[q]->get_metric(metric_t::DEMAND);
+        SBQueue* inq = dynamic_cast<SBQueue*>(in_queues[q]);
+        if (inq == nullptr) {
+            throw runtime_error("SONiCSwitch boundary ingress queue is not an SBQueue");
+        }
+
+        Metric* demand_metric = inq->get_metric(metric_t::DEMAND);
         if (demand_metric == nullptr) continue;
 
         unsigned int ser_factor = 1;
@@ -76,23 +81,18 @@ void SONiCSwitch::add_in_queue_constrs() {
                 demand_t = demand_t - demand_metric->val(t - 1).second;
             }
 
-            for (unsigned int dt = 1; dt < ser_factor && t + dt < total_time; dt++) {
-                expr demand_next = demand_metric->val(t + dt).second;
-                if (t + dt > 0) {
-                    demand_next = demand_next - demand_metric->val(t + dt - 1).second;
-                }
-
-                snprintf(constr_name,
-                         sizeof(constr_name),
-                         "sb_boundary_demand_cooldown_q%u_t%u_dt%u",
-                         q,
-                         t,
-                         dt);
-                // Boundary ingress demand cooldown for this SONiC switch follows the switch-local
-                // ingress serialization factor.
-                new_constr_map.insert(
-                    named_constr(constr_name, implies(demand_t > 0, demand_next == 0)));
+            expr can_inject = net_ctx.bool_val(true);
+            for (unsigned int dt = 1; dt < ser_factor && dt <= t; dt++) {
+                can_inject = can_inject && !net_ctx.pkt2val(inq->enqs(0)[t - dt]);
             }
+
+            snprintf(constr_name, sizeof(constr_name), "sb_boundary_enq_from_demand_q%u_t%u", q, t);
+            // Boundary ingress actual arrival is driven by demand, delayed sender-visible pause,
+            // and the local ingress port cooldown. Demand remains an independent intent signal.
+            new_constr_map.insert(named_constr(
+                constr_name,
+                net_ctx.pkt2val(inq->enqs(0)[t]) ==
+                    (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
         }
     }
 

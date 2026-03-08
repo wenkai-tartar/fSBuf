@@ -46,13 +46,6 @@ void SharedBufferPoint::add_in_queue_constrs() {
             snprintf(constr_name, sizeof(constr_name), "sb_boundary_demand_ub_q%u_t%u", q, t);
             // Per-slot external demand is capped by configured max_demand_per_t and queue max_enq.
             new_constr_map.insert(named_constr(constr_name, demand_t <= (int) demand_ub));
-
-            snprintf(constr_name, sizeof(constr_name), "sb_boundary_enq_from_demand_q%u_t%u", q, t);
-            // A boundary ingress packet arrives on this interface exactly when demand is present
-            // and the delayed sender-visible pause state is clear.
-            new_constr_map.insert(named_constr(constr_name,
-                                               net_ctx.pkt2val(inq->enqs(0)[t]) ==
-                                                   (demand_t > 0 && !inq->sender_paused(t))));
         }
     }
 
