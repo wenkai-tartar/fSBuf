@@ -100,9 +100,40 @@ bool test_shared_buffer_ingress_rate_limit() {
     return sat_res == solver_res_t::SAT && unsat_res == solver_res_t::UNSAT;
 }
 
+bool test_shared_buffer_egress_backpressure() {
+    const unsigned int total_time = 5;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    SharedBufferSwitchInfo switch_info;
+    switch_info.ingress_queue_cnt = 1;
+    switch_info.egress_queue_cnt = 1;
+    switch_info.buffer_slot_cnt = 1;
+    switch_info.ingress_pool_size = 1;
+    switch_info.headroom_pool_size = 1;
+    switch_info.egress_lossless_pool_size = 1;
+    switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
+    switch_info.egress_ser_factor = {2};
+
+    cout << "[shared_buffer_egress_backpressure] SAT case: demand(T)>=5, cenq(T)>=3" << endl;
+    solver_res_t sat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 3);
+    cout << "[shared_buffer_egress_backpressure] UNSAT case: demand(T)>=5, cenq(T)>=4" << endl;
+    solver_res_t unsat_res =
+        run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 4);
+
+    cout << "sat-bound: " << sat_res << endl;
+    cout << "unsat-bound: " << unsat_res << endl;
+
+    return sat_res == solver_res_t::SAT && unsat_res == solver_res_t::UNSAT;
+}
+
 void SharedBufferTest::add_to_runner(TestRunner* runner) {
     runner->add_test_case("shared_buffer_no_congestion_full_throughput",
                           test_shared_buffer_no_congestion_full_throughput);
     runner->add_test_case("shared_buffer_ingress_rate_limit",
                           test_shared_buffer_ingress_rate_limit);
+    runner->add_test_case("shared_buffer_egress_backpressure",
+                          test_shared_buffer_egress_backpressure);
 }
