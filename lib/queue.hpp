@@ -129,6 +129,12 @@ public:
  *   - enqs -> enq_cnt interface visibility
  *   - inert elem state for legacy compatibility
  *   - coarse-step pause/resume and delayed sender-visible control state
+ *
+ * TODO(shared-buffer-semantics): Introduce a SharedBufferSemanticPolicy and make SBQueue a
+ * thinner interface object. The queue API should continue to expose enqueue-visible arrivals and
+ * pause/resume/sender_paused signals, but the timing semantics for those signals should move out
+ * of SBQueue so FAST_STEADY and PRECISE_PFC can share the same queue shape while using different
+ * transport / feedback timing models.
  */
 class SBQueue : public Queue {
 public:

@@ -54,6 +54,12 @@ public:
     string debug_model_str(model& m, NetContext& net_ctx, unsigned int t) const;
 
 private:
+    // TODO(shared-buffer-semantics): Keep this class as the shared-buffer core and inject a
+    // SharedBufferSemanticPolicy from SONiCSwitch instead of splitting the core into multiple
+    // subclasses. The common skeleton here should continue to own buffer-slot state, admission,
+    // pool accounting, and XOFF/XON threshold logic; the policy should provide the profile-
+    // specific meaning of ingress-visible arrivals, sender-visible pause timing, and any
+    // residual/in-flight traffic semantics needed by PRECISE_PFC.
     void add_proc_vars(NetContext& net_ctx) override;
     void add_scaffold_constrs(NetContext& net_ctx, map<string, expr>& constr_map);
     SBQueue* ingress_sb_queue(unsigned int q);

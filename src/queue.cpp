@@ -666,6 +666,10 @@ void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
             snprintf(constr_name, sizeof(constr_name), "%s_sender_paused_init", id.c_str());
             constr_map.insert(named_constr(constr_name, !sender_paused_[0]));
         } else {
+            // TODO(shared-buffer-semantics): This hard-coded 1-slot control propagation is the
+            // current FAST_STEADY approximation. Move pause_rx/resume_rx/sender_paused evolution
+            // behind SharedBufferSemanticPolicy so PRECISE_PFC can model launch-vs-arrival timing
+            // and in-flight traffic without forking SharedBufferSwitchQM's common core logic.
             // Coarse-step control propagation: pause/resume sent at t-1 is observed at t.
             snprintf(constr_name, sizeof(constr_name), "%s_pause_rx_delay_%u", id.c_str(), t);
             constr_map.insert(named_constr(constr_name, pause_rx_[t] == pause_tx_[t - 1]));
