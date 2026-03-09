@@ -120,6 +120,53 @@ run_output_cenq_query(unsigned int total_time,
     return sw.satisfy_query();
 }
 
+static solver_res_t
+run_ingress_cenq_diff_query(unsigned int total_time,
+                            const SharedBufferEnvInfo& env_info,
+                            const SharedBufferSwitchInfo& switch_info,
+                            const vector<int>& demand_lb,
+                            const vector<int>& dst_eq,
+                            unsigned int lhs_ingress,
+                            unsigned int rhs_ingress,
+                            unsigned int query_t1,
+                            unsigned int query_t2,
+                            Op op,
+                            unsigned int thresh,
+                            unique_ptr<SharedBufferRoutePolicy> route_policy = nullptr) {
+    SONiCSwitch sw(total_time, env_info, switch_info, std::move(route_policy));
+
+    Workload wl(20, sw.in_queue_cnt(), total_time);
+    for (unsigned int q = 0; q < sw.in_queue_cnt(); q++) {
+        if (q < demand_lb.size() && demand_lb[q] >= 0) {
+            wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q),
+                                           Op(Op::Type::GE),
+                                           new Constant(demand_lb[q])),
+                                  time_range_t(total_time - 1, total_time - 1),
+                                  total_time));
+        }
+
+        if (q < dst_eq.size() && dst_eq[q] >= 0) {
+            wl.add_spec(TimedSpec(
+                new Comp(new Indiv(metric_t::DST, q), Op(Op::Type::EQ), new Constant(dst_eq[q])),
+                time_range_t(0, total_time - 1),
+                total_time));
+        }
+    }
+    sw.set_base_workload(wl);
+
+    cid_t lhs_qid = sw.get_in_queues()[lhs_ingress]->get_id();
+    cid_t rhs_qid = sw.get_in_queues()[rhs_ingress]->get_id();
+    Query query(query_quant_t::FORALL,
+                time_range_t(query_t1, query_t2),
+                qdiff_t(lhs_qid, rhs_qid),
+                metric_t::CENQ,
+                op,
+                thresh);
+    sw.set_query(query);
+
+    return sw.satisfy_query();
+}
+
 bool test_shared_buffer_no_congestion_full_throughput() {
     const unsigned int total_time = 4;
 
@@ -385,6 +432,65 @@ bool test_shared_buffer_table_route_policy() {
     return fast_res == solver_res_t::SAT && miss_res == solver_res_t::UNSAT;
 }
 
+bool test_shared_buffer_ingress_service_gap_control() {
+    const unsigned int total_time = 5;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    SharedBufferSwitchInfo switch_info;
+    switch_info.ingress_queue_cnt = 2;
+    switch_info.egress_queue_cnt = 2;
+    switch_info.buffer_slot_cnt = 8;
+    switch_info.ingress_pool_size = 8;
+    switch_info.headroom_pool_size = 8;
+    switch_info.egress_lossless_pool_size = 8;
+    switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
+
+    vector<int> demand_lb = {5, 5};
+    vector<int> dst_eq = {-1, -1};
+    const unsigned int t1 = 1;
+    const unsigned int t2 = 4;
+
+    cout << "[shared_buffer_ingress_service_gap_control] q0-q1 cenq gap stays <= 0 on [1,4]"
+         << endl;
+    solver_res_t q0_le_q1 = run_ingress_cenq_diff_query(total_time,
+                                                        env_info,
+                                                        switch_info,
+                                                        demand_lb,
+                                                        dst_eq,
+                                                        0,
+                                                        1,
+                                                        t1,
+                                                        t2,
+                                                        Op(Op::Type::LE),
+                                                        0,
+                                                        make_unique<FixedIngressRoutePolicy>(
+                                                            vector<unsigned int>{0, 1}));
+
+    cout << "[shared_buffer_ingress_service_gap_control] q1-q0 cenq gap stays <= 0 on [1,4]"
+         << endl;
+    solver_res_t q1_le_q0 = run_ingress_cenq_diff_query(total_time,
+                                                        env_info,
+                                                        switch_info,
+                                                        demand_lb,
+                                                        dst_eq,
+                                                        1,
+                                                        0,
+                                                        t1,
+                                                        t2,
+                                                        Op(Op::Type::LE),
+                                                        0,
+                                                        make_unique<FixedIngressRoutePolicy>(
+                                                            vector<unsigned int>{0, 1}));
+
+    cout << "q0_minus_q1_le_0: " << q0_le_q1 << endl;
+    cout << "q1_minus_q0_le_0: " << q1_le_q0 << endl;
+
+    return q0_le_q1 == solver_res_t::SAT && q1_le_q0 == solver_res_t::SAT;
+}
+
 void SharedBufferTest::add_to_runner(TestRunner* runner) {
     runner->add_test_case("shared_buffer_no_congestion_full_throughput",
                           test_shared_buffer_no_congestion_full_throughput);
@@ -400,4 +506,6 @@ void SharedBufferTest::add_to_runner(TestRunner* runner) {
                           test_shared_buffer_fixed_ingress_route_policy);
     runner->add_test_case("shared_buffer_table_route_policy",
                           test_shared_buffer_table_route_policy);
+    runner->add_test_case("shared_buffer_ingress_service_gap_control",
+                          test_shared_buffer_ingress_service_gap_control);
 }
