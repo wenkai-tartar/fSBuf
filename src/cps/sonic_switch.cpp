@@ -14,9 +14,14 @@
 
 SONiCSwitch::SONiCSwitch(unsigned int total_time,
                          SharedBufferEnvInfo env_info,
-                         SharedBufferSwitchInfo switch_info):
+                         SharedBufferSwitchInfo switch_info,
+                         unique_ptr<SharedBufferRoutePolicy> route_policy):
 SharedBufferPoint(total_time, env_info),
-switch_info_(switch_info) {
+switch_info_(switch_info),
+route_policy_(std::move(route_policy)) {
+    if (route_policy_ == nullptr) {
+        route_policy_ = make_unique<ModuloMeta1RoutePolicy>();
+    }
     init();
 }
 
@@ -40,14 +45,14 @@ void SONiCSwitch::add_nodes() {
     out_info.type = queue_t::SB_EGRESS;
 
     cid_t m_id = "SB_CORE";
-    SharedBufferSwitchQM* sb_qm = new SharedBufferSwitchQM(m_id,
-                                                           total_time,
-                                                           vector<QueueInfo>(switch_info_.ingress_queue_cnt,
-                                                                             in_info),
-                                                           vector<QueueInfo>(switch_info_.egress_queue_cnt,
-                                                                             out_info),
-                                                           switch_info_,
-                                                           net_ctx);
+    SharedBufferSwitchQM* sb_qm = new SharedBufferSwitchQM(
+        m_id,
+        total_time,
+        vector<QueueInfo>(switch_info_.ingress_queue_cnt, in_info),
+        vector<QueueInfo>(switch_info_.egress_queue_cnt, out_info),
+        switch_info_,
+        route_policy_.get(),
+        net_ctx);
     nodes.push_back(m_id);
     id_to_qm[m_id] = sb_qm;
 }
@@ -93,10 +98,10 @@ void SONiCSwitch::add_in_queue_constrs() {
             // signal first and then constrain delayed / residual arrivals onto inq->enqs(0)[t].
             // Boundary ingress actual arrival is driven by demand, delayed sender-visible pause,
             // and the local ingress port cooldown. Demand remains an independent intent signal.
-            new_constr_map.insert(named_constr(
-                constr_name,
-                net_ctx.pkt2val(inq->enqs(0)[t]) ==
-                    (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
+            new_constr_map.insert(
+                named_constr(constr_name,
+                             net_ctx.pkt2val(inq->enqs(0)[t]) ==
+                                 (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
         }
     }
 
@@ -104,11 +109,20 @@ void SONiCSwitch::add_in_queue_constrs() {
 }
 
 void SONiCSwitch::add_metrics() {
-    // CEnq
+    // Input CEnq
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];
         CEnq* ce = new CEnq(queue, total_time, net_ctx);
         cenq_.push_back(ce);
+        metrics[metric_t::CENQ][queue->get_id()] = ce;
+        queue->add_metric(metric_t::CENQ, ce);
+    }
+
+    // Output CEnq
+    for (unsigned int q = 0; q < out_queues.size(); q++) {
+        Queue* queue = out_queues[q];
+        CEnq* ce = new CEnq(queue, total_time, net_ctx);
+        out_cenq_.push_back(ce);
         metrics[metric_t::CENQ][queue->get_id()] = ce;
         queue->add_metric(metric_t::CENQ, ce);
     }
@@ -120,6 +134,15 @@ void SONiCSwitch::add_metrics() {
         demand_.push_back(d);
         metrics[metric_t::DEMAND][queue->get_id()] = d;
         queue->add_metric(metric_t::DEMAND, d);
+    }
+
+    // Dst
+    for (unsigned int q = 0; q < in_queues.size(); q++) {
+        Queue* queue = in_queues[q];
+        Dst* d = new Dst(queue, total_time, net_ctx);
+        dst_.push_back(d);
+        metrics[metric_t::DST][queue->get_id()] = d;
+        queue->add_metric(metric_t::DST, d);
     }
 }
 

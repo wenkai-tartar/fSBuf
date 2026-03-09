@@ -8,9 +8,13 @@
 #ifndef sonic_switch_hpp
 #define sonic_switch_hpp
 
+#include <memory>
+
 #include "cenq.hpp"
 #include "demand.hpp"
+#include "dst.hpp"
 #include "shared_buffer_point.hpp"
+#include "shared_buffer_route_policy.hpp"
 #include "shared_buffer_switch_qm.hpp"
 
 using namespace std;
@@ -19,13 +23,17 @@ class SONiCSwitch : public SharedBufferPoint {
 public:
     SONiCSwitch(unsigned int total_time,
                 SharedBufferEnvInfo env_info,
-                SharedBufferSwitchInfo switch_info);
+                SharedBufferSwitchInfo switch_info,
+                unique_ptr<SharedBufferRoutePolicy> route_policy = nullptr);
 
 private:
     SharedBufferSwitchInfo switch_info_;
+    unique_ptr<SharedBufferRoutePolicy> route_policy_;
 
     vector<CEnq*> cenq_;
+    vector<CEnq*> out_cenq_;
     vector<Demand*> demand_;
+    vector<Dst*> dst_;
 
     void add_nodes() override;
     void add_edges() override;

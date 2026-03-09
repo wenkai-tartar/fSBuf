@@ -9,6 +9,7 @@
 #define shared_buffer_switch_qm_hpp
 
 #include "queuing_module.hpp"
+#include "shared_buffer_route_policy.hpp"
 
 using namespace std;
 
@@ -36,6 +37,7 @@ public:
                          vector<QueueInfo> in_queue_info,
                          vector<QueueInfo> out_queue_info,
                          SharedBufferSwitchInfo info,
+                         SharedBufferRoutePolicy* route_policy,
                          NetContext& net_ctx);
 
     void add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) override;
@@ -68,6 +70,7 @@ private:
     const SBQueue* egress_sb_queue(unsigned int e) const;
 
     SharedBufferSwitchInfo sb_info_;
+    SharedBufferRoutePolicy* route_policy_;
 
     // Shared-buffer internal state lives at micro-step granularity [..][t][k].
     vector<vector<vector<expr>>> buf_pkt_;   // [b][t][k] pkt

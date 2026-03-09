@@ -16,9 +16,11 @@ SharedBufferSwitchQM::SharedBufferSwitchQM(cid_t id,
                                            vector<QueueInfo> in_queue_info,
                                            vector<QueueInfo> out_queue_info,
                                            SharedBufferSwitchInfo info,
+                                           SharedBufferRoutePolicy* route_policy,
                                            NetContext& net_ctx):
 QueuingModule(id, total_time, in_queue_info, out_queue_info, net_ctx),
-sb_info_(info) {
+sb_info_(info),
+route_policy_(route_policy) {
     init(net_ctx);
 }
 
@@ -248,6 +250,10 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
     const unsigned int micro_steps = micro_step_cnt();
     const unsigned int k_states = micro_steps + 1;
 
+    if (route_policy_ == nullptr) {
+        throw runtime_error("SharedBufferSwitchQM requires a route policy");
+    }
+
     buf_pkt_.clear();
     buf_in_.clear();
     buf_e_.clear();
@@ -425,10 +431,18 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
             egress_lossless_pool_total_occ_[t].push_back(net_ctx.int_const(vname));
         }
     }
+
+    route_policy_->add_proc_vars(id, total_time, in_queues, eg_cnt, net_ctx);
 }
 
 void SharedBufferSwitchQM::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
+    if (route_policy_ == nullptr) {
+        throw runtime_error("SharedBufferSwitchQM requires a route policy");
+    }
+
     add_scaffold_constrs(net_ctx, constr_map);
+    route_policy_->add_constrs(
+        id, total_time, in_queues, (unsigned int) out_queues.size(), net_ctx, constr_map);
 }
 
 void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
@@ -598,7 +612,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
 
                 expr pkt = inq->enqs(0)[t];
                 expr has_enq = net_ctx.pkt2val(pkt);
-                expr dst_eg = net_ctx.pkt2meta1(pkt) % net_ctx.int_val((int) eg_cnt);
+                expr dst_eg = route_policy_->routed_egress(id, q, t, pkt, eg_cnt, net_ctx);
                 expr has_ing_credit = ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt;
                 expr has_hdr_credit = headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt;
                 expr has_eg_credit = egress_lossless_pool_total_occ_[t][k] <
@@ -609,6 +623,17 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 expr_vector route_cases(net_ctx.z3_ctx());
                 expr any_empty = net_ctx.bool_val(false);
                 expr writes_sum = int0;
+
+                snprintf(constr_name,
+                         sizeof(constr_name),
+                         "%s_routed_egress_range_q%u_t%u_k%u",
+                         id.c_str(),
+                         q,
+                         t,
+                         k);
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 implies(has_enq, dst_eg >= 0 && dst_eg < (int) eg_cnt)));
 
                 snprintf(constr_name,
                          sizeof(constr_name),
@@ -1428,7 +1453,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 for (unsigned int q = 0; q < in_cnt; q++) {
                     Queue* inq = in_queues[q];
                     expr pkt = inq->enqs(0)[t];
-                    expr dst_eg = net_ctx.pkt2meta1(pkt) % net_ctx.int_val((int) eg_cnt);
+                    expr dst_eg = route_policy_->routed_egress(id, q, t, pkt, eg_cnt, net_ctx);
 
                     snprintf(constr_name,
                              sizeof(constr_name),
