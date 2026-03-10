@@ -43,43 +43,6 @@ run_single_ingress_cenq_query(unsigned int total_time,
 }
 
 static solver_res_t
-run_single_egress_pfc_blocked_query(unsigned int total_time,
-                                    const SharedBufferEnvInfo& env_info,
-                                    const SharedBufferSwitchInfo& switch_info,
-                                    int demand_lb,
-                                    unsigned int query_t1,
-                                    unsigned int query_t2,
-                                    int blocked_lb,
-                                    unique_ptr<SharedBufferRoutePolicy> route_policy = nullptr,
-                                    int dst_eq = -1) {
-    SONiCSwitch sw(total_time, env_info, switch_info, std::move(route_policy));
-
-    Workload wl(10, sw.in_queue_cnt(), total_time);
-    wl.add_spec(TimedSpec(
-        new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::GE), new Constant(demand_lb)),
-        time_range_t(total_time - 1, total_time - 1),
-        total_time));
-    if (dst_eq >= 0) {
-        wl.add_spec(
-            TimedSpec(new Comp(new Indiv(metric_t::DST, 0), Op(Op::Type::EQ), new Constant(dst_eq)),
-                      time_range_t(0, total_time - 1),
-                      total_time));
-    }
-    sw.set_base_workload(wl);
-
-    cid_t queue_id = sw.get_out_queue(0)->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(query_t1, query_t2),
-                queue_id,
-                metric_t::PFC_BLOCKED,
-                Op(Op::Type::GE),
-                blocked_lb);
-    sw.set_query(query);
-
-    return sw.satisfy_query();
-}
-
-static solver_res_t
 run_single_ingress_cenq_query_at_time(unsigned int total_time,
                                       const SharedBufferEnvInfo& env_info,
                                       const SharedBufferSwitchInfo& switch_info,
@@ -528,60 +491,6 @@ bool test_shared_buffer_ingress_service_gap_control() {
     return q0_le_q1 == solver_res_t::SAT && q1_le_q0 == solver_res_t::SAT;
 }
 
-bool test_shared_buffer_pfc_blocked_quiescent_boundary() {
-    const unsigned int total_time = 7;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    SharedBufferSwitchInfo switch_info;
-    switch_info.ingress_queue_cnt = 1;
-    switch_info.egress_queue_cnt = 1;
-    switch_info.buffer_slot_cnt = 2;
-    switch_info.ingress_pool_size = 2;
-    switch_info.headroom_pool_size = 2;
-    switch_info.egress_lossless_pool_size = 2;
-    switch_info.egress_ser_factor = {2};
-    switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
-
-    cout << "[shared_buffer_pfc_blocked_quiescent_boundary] EXISTS [2,6]: egress pfc_blocked >= 1"
-         << endl;
-    solver_res_t res =
-        run_single_egress_pfc_blocked_query(total_time, env_info, switch_info, 7, 2, 6, 1);
-
-    cout << "blocked_witness: " << res << endl;
-
-    return res == solver_res_t::UNSAT;
-}
-
-bool test_shared_buffer_pfc_blocked_external_pause_witness() {
-    const unsigned int total_time = 7;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = false;
-
-    SharedBufferSwitchInfo switch_info;
-    switch_info.ingress_queue_cnt = 1;
-    switch_info.egress_queue_cnt = 1;
-    switch_info.buffer_slot_cnt = 2;
-    switch_info.ingress_pool_size = 2;
-    switch_info.headroom_pool_size = 2;
-    switch_info.egress_lossless_pool_size = 2;
-    switch_info.egress_ser_factor = {2};
-    switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
-
-    cout << "[shared_buffer_pfc_blocked_external_pause_witness] EXISTS [2,6]: egress pfc_blocked >= 1"
-         << endl;
-    solver_res_t res =
-        run_single_egress_pfc_blocked_query(total_time, env_info, switch_info, 7, 2, 6, 1);
-
-    cout << "blocked_witness: " << res << endl;
-
-    return res == solver_res_t::SAT;
-}
-
 void SharedBufferTest::add_to_runner(TestRunner* runner) {
     runner->add_test_case("shared_buffer_no_congestion_full_throughput",
                           test_shared_buffer_no_congestion_full_throughput);
@@ -599,8 +508,4 @@ void SharedBufferTest::add_to_runner(TestRunner* runner) {
                           test_shared_buffer_table_route_policy);
     runner->add_test_case("shared_buffer_ingress_service_gap_control",
                           test_shared_buffer_ingress_service_gap_control);
-    runner->add_test_case("shared_buffer_pfc_blocked_quiescent_boundary",
-                          test_shared_buffer_pfc_blocked_quiescent_boundary);
-    runner->add_test_case("shared_buffer_pfc_blocked_external_pause_witness",
-                          test_shared_buffer_pfc_blocked_external_pause_witness);
 }

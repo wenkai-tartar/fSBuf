@@ -132,20 +132,6 @@ void SONiCSwitch::add_metrics() {
         queue->add_metric(metric_t::CENQ, ce);
     }
 
-    // Output PFC-blocked bit
-    for (unsigned int e = 0; e < out_queues.size(); e++) {
-        Queue* queue = out_queues[e];
-        vector<expr> blocked_exprs;
-        blocked_exprs.reserve(total_time);
-        for (unsigned int t = 0; t < total_time; t++) {
-            blocked_exprs.push_back(sb_qm->egress_blocked(e, t));
-        }
-        PFCBlocked* pb = new PFCBlocked(queue, total_time, blocked_exprs, net_ctx);
-        pfc_blocked_.push_back(pb);
-        metrics[metric_t::PFC_BLOCKED][queue->get_id()] = pb;
-        queue->add_metric(metric_t::PFC_BLOCKED, pb);
-    }
-
     // Demand
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];
@@ -177,11 +163,10 @@ string SONiCSwitch::cp_model_str(model& m, NetContext& net_ctx, unsigned int t) 
         ss << endl;
     }
 
-    ss << "egress qid: cenq, pfc_blocked" << endl;
+    ss << "egress qid: cenq" << endl;
     for (unsigned int e = 0; e < out_queues.size(); e++) {
         Queue* queue = out_queues[e];
         ss << queue->get_id() << ": " << m.eval(out_cenq_[e]->val(t).second).get_numeral_int();
-        ss << ", " << m.eval(pfc_blocked_[e]->val(t).second).get_numeral_int();
         ss << endl;
     }
 
