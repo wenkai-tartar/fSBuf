@@ -73,12 +73,62 @@ unsigned int SharedBufferSwitchQM::egress_serialization_factor(unsigned int e) c
     return f;
 }
 
+void SharedBufferSwitchQM::validate_priority(unsigned int priority) const {
+    if (priority != 0) {
+        throw runtime_error("SharedBufferSwitchQM currently only supports priority=0");
+    }
+}
+
 const expr& SharedBufferSwitchQM::ingress_paused(unsigned int q, unsigned int t) const {
     return ingress_paused_[q][t];
 }
 
-const expr& SharedBufferSwitchQM::pfc_blocked(unsigned int e, unsigned int t) const {
-    return pfc_blocked_[e][t];
+const expr& SharedBufferSwitchQM::cbd_ingress_paused(unsigned int q,
+                                                     unsigned int t,
+                                                     unsigned int priority) const {
+    validate_priority(priority);
+    return ingress_paused_[q][t];
+}
+
+expr SharedBufferSwitchQM::cbd_ingress_has_pkt(unsigned int q,
+                                               unsigned int t,
+                                               unsigned int priority) const {
+    validate_priority(priority);
+    const unsigned int k_end = micro_step_cnt();
+    return ingress_pool_occ_[q][t][k_end] + headroom_pool_occ_[q][t][k_end] > 0;
+}
+
+expr SharedBufferSwitchQM::cbd_ingress_no_progress(unsigned int q,
+                                                   unsigned int t,
+                                                   unsigned int priority) const {
+    validate_priority(priority);
+    const unsigned int deq_k = deq_step_idx();
+    expr no_progress = !(read_slot_[0][t][deq_k] && buf_in_[0][t][deq_k] == (int) q);
+    for (unsigned int b = 1; b < sb_info_.buffer_slot_cnt; b++) {
+        no_progress = no_progress && !(read_slot_[b][t][deq_k] && buf_in_[b][t][deq_k] == (int) q);
+    }
+    return no_progress;
+}
+
+expr SharedBufferSwitchQM::cbd_ingress_pending_to_egress(unsigned int q,
+                                                         unsigned int e,
+                                                         unsigned int t,
+                                                         unsigned int priority) const {
+    validate_priority(priority);
+    const unsigned int k_end = micro_step_cnt();
+    expr pending = (buf_in_[0][t][k_end] == (int) q) && (buf_e_[0][t][k_end] == (int) e);
+    for (unsigned int b = 1; b < sb_info_.buffer_slot_cnt; b++) {
+        pending = pending ||
+                  ((buf_in_[b][t][k_end] == (int) q) && (buf_e_[b][t][k_end] == (int) e));
+    }
+    return pending;
+}
+
+const expr& SharedBufferSwitchQM::egress_blocked(unsigned int e,
+                                                 unsigned int t,
+                                                 unsigned int priority) const {
+    validate_priority(priority);
+    return egress_blocked_[e][t];
 }
 
 const expr& SharedBufferSwitchQM::slot_pkt(unsigned int b, unsigned int t, unsigned int k) const {
@@ -181,7 +231,7 @@ string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsi
         ss << " e" << e << "(sender_paused=" << (eval_bool(outq->sender_paused(t)) ? 1 : 0)
            << ", can_emit=" << (can_emit ? 1 : 0)
            << ", has_pkt=" << (eval_bool(has_pkt_e_[e][t]) ? 1 : 0)
-           << ", blocked=" << (eval_bool(pfc_blocked_[e][t]) ? 1 : 0)
+           << ", blocked=" << (eval_bool(egress_blocked_[e][t]) ? 1 : 0)
            << ", min_stamp=" << eval_int(min_stamp_e_[e][t]) << ")";
     }
     ss << endl;
@@ -264,7 +314,7 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
     buf_e_.clear();
     buf_stamp_.clear();
     ingress_paused_.clear();
-    pfc_blocked_.clear();
+    egress_blocked_.clear();
     ingress_pool_occ_.clear();
     ingress_pool_total_occ_.clear();
     headroom_pool_occ_.clear();
@@ -287,7 +337,7 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
     buf_e_.resize(slot_cnt);
     buf_stamp_.resize(slot_cnt);
     ingress_paused_.resize(in_cnt);
-    pfc_blocked_.resize(eg_cnt);
+    egress_blocked_.resize(eg_cnt);
     ingress_pool_occ_.resize(in_cnt);
     ingress_pool_total_occ_.resize(total_time);
     headroom_pool_occ_.resize(in_cnt);
@@ -380,10 +430,10 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
     }
 
     for (unsigned int e = 0; e < eg_cnt; e++) {
-        pfc_blocked_[e].reserve(total_time);
+        egress_blocked_[e].reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
             snprintf(vname, sizeof(vname), "%s_pfc_blocked[%u][%u]", id.c_str(), e, t);
-            pfc_blocked_[e].push_back(net_ctx.bool_const(vname));
+            egress_blocked_[e].push_back(net_ctx.bool_const(vname));
         }
     }
 
@@ -1755,7 +1805,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             // because the downstream receiver has paused this interface.
             constr_map.insert(named_constr(
                 constr_name,
-                pfc_blocked_[e][t] == (has_pkt_e_[e][t] && outq->sender_paused(t))));
+                egress_blocked_[e][t] == (has_pkt_e_[e][t] && outq->sender_paused(t))));
         }
     }
 }

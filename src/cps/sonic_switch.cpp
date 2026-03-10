@@ -138,7 +138,7 @@ void SONiCSwitch::add_metrics() {
         vector<expr> blocked_exprs;
         blocked_exprs.reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
-            blocked_exprs.push_back(sb_qm->pfc_blocked(e, t));
+            blocked_exprs.push_back(sb_qm->egress_blocked(e, t));
         }
         PFCBlocked* pb = new PFCBlocked(queue, total_time, blocked_exprs, net_ctx);
         pfc_blocked_.push_back(pb);
