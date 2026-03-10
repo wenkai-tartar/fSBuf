@@ -1,5 +1,6 @@
 #include "cbd_shared_buffer.hpp"
 
+#include <set>
 #include <sstream>
 #include <stdexcept>
 
@@ -17,6 +18,116 @@ ring_edges_(std::move(ring_edges)) {
 
 const vector<CBDRingEdge>& CBDSharedBufferCP::ring_edges() const {
     return ring_edges_;
+}
+
+const vector<CBDNodeRef>& CBDSharedBufferCP::ring_nodes() const {
+    return ring_nodes_;
+}
+
+const CBDRingEdge& CBDSharedBufferCP::incoming_ring_edge(const CBDNodeRef& node) const {
+    auto it = incoming_ring_edge_idx_.find(node);
+    if (it == incoming_ring_edge_idx_.end()) {
+        throw runtime_error("CBDSharedBufferCP ring node has no incoming ring edge");
+    }
+    return ring_edges_[it->second];
+}
+
+const CBDRingEdge& CBDSharedBufferCP::outgoing_ring_edge(const CBDNodeRef& node) const {
+    auto it = outgoing_ring_edge_idx_.find(node);
+    if (it == outgoing_ring_edge_idx_.end()) {
+        throw runtime_error("CBDSharedBufferCP ring node has no outgoing ring edge");
+    }
+    return ring_edges_[it->second];
+}
+
+const CBDRingEdge& CBDSharedBufferCP::ring_edge_for_egress(const CBDEgressRef& egress) const {
+    auto it = ring_edge_idx_by_egress_.find(egress);
+    if (it == ring_edge_idx_by_egress_.end()) {
+        throw runtime_error("CBDSharedBufferCP egress is not part of the CBD ring");
+    }
+    return ring_edges_[it->second];
+}
+
+bool CBDSharedBufferCP::is_ring_ingress(const CBDNodeRef& node) const {
+    return incoming_ring_edge_idx_.find(node) != incoming_ring_edge_idx_.end();
+}
+
+bool CBDSharedBufferCP::is_ring_egress(const CBDEgressRef& egress) const {
+    return ring_edge_idx_by_egress_.find(egress) != ring_edge_idx_by_egress_.end();
+}
+
+CBDNodeRef CBDSharedBufferCP::src_node(const CBDRingEdge& edge) const {
+    return CBDNodeRef{edge.src_switch, edge.src_ingress, edge.priority};
+}
+
+CBDNodeRef CBDSharedBufferCP::dst_node(const CBDRingEdge& edge) const {
+    return CBDNodeRef{edge.dst_switch, edge.dst_ingress, edge.priority};
+}
+
+CBDEgressRef CBDSharedBufferCP::src_egress(const CBDRingEdge& edge) const {
+    return CBDEgressRef{edge.src_switch, edge.src_egress, edge.priority};
+}
+
+void CBDSharedBufferCP::validate_and_index_ring() {
+    ring_nodes_.clear();
+    incoming_ring_edge_idx_.clear();
+    outgoing_ring_edge_idx_.clear();
+    ring_edge_idx_by_egress_.clear();
+
+    if (ring_edges_.empty()) {
+        throw runtime_error("CBDSharedBufferCP requires at least one CBD ring edge");
+    }
+
+    set<CBDNodeRef> ring_node_set;
+    for (unsigned int edge_idx = 0; edge_idx < ring_edges_.size(); edge_idx++) {
+        const CBDRingEdge& edge = ring_edges_[edge_idx];
+        CBDNodeRef src = src_node(edge);
+        CBDNodeRef dst = dst_node(edge);
+        CBDEgressRef eg = src_egress(edge);
+
+        if (!outgoing_ring_edge_idx_.emplace(src, edge_idx).second) {
+            throw runtime_error("CBDSharedBufferCP ring source node has multiple outgoing edges");
+        }
+        if (!incoming_ring_edge_idx_.emplace(dst, edge_idx).second) {
+            throw runtime_error("CBDSharedBufferCP ring destination node has multiple incoming edges");
+        }
+        if (!ring_edge_idx_by_egress_.emplace(eg, edge_idx).second) {
+            throw runtime_error("CBDSharedBufferCP ring source egress is reused by multiple edges");
+        }
+
+        ring_node_set.insert(src);
+        ring_node_set.insert(dst);
+    }
+
+    if (incoming_ring_edge_idx_.size() != ring_node_set.size() ||
+        outgoing_ring_edge_idx_.size() != ring_node_set.size()) {
+        throw runtime_error("CBDSharedBufferCP ring nodes must each have exactly one incoming and one outgoing edge");
+    }
+
+    CBDNodeRef start = src_node(ring_edges_.front());
+    CBDNodeRef cur = start;
+    set<CBDNodeRef> visited;
+    vector<CBDNodeRef> visit_order;
+    for (unsigned int step = 0; step < ring_edges_.size(); step++) {
+        auto out_it = outgoing_ring_edge_idx_.find(cur);
+        if (out_it == outgoing_ring_edge_idx_.end()) {
+            throw runtime_error("CBDSharedBufferCP ring traversal reached a node without outgoing edge");
+        }
+        if (!visited.insert(cur).second) {
+            throw runtime_error("CBDSharedBufferCP ring contains a repeated node before closing the cycle");
+        }
+        visit_order.push_back(cur);
+        cur = dst_node(ring_edges_[out_it->second]);
+    }
+
+    if (cur.switch_id != start.switch_id || cur.ingress != start.ingress || cur.priority != start.priority) {
+        throw runtime_error("CBDSharedBufferCP ring edges do not close into a single cycle");
+    }
+    if (visited.size() != ring_node_set.size()) {
+        throw runtime_error("CBDSharedBufferCP ring edges form multiple disconnected cycles");
+    }
+
+    ring_nodes_ = std::move(visit_order);
 }
 
 void CBDSharedBufferCP::add_nodes() {
@@ -94,6 +205,8 @@ void CBDSharedBufferCP::add_edges() {
         queue_edges[cid_pair(edge.src_switch, edge.dst_switch)].push_back(
             qpair(edge.src_egress, edge.dst_ingress));
     }
+
+    validate_and_index_ring();
 }
 
 void CBDSharedBufferCP::add_metrics() {
@@ -178,6 +291,15 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
     ss << "cbd_shared_buffer_cp"
        << " switches=" << switch_order_.size()
        << ", ring_edges=" << ring_edges_.size() << endl;
+
+    ss << "ring nodes:" << endl;
+    for (const CBDNodeRef& node : ring_nodes_) {
+        const CBDRingEdge& in_edge = incoming_ring_edge(node);
+        const CBDRingEdge& out_edge = outgoing_ring_edge(node);
+        ss << "(" << node.switch_id << ", q" << node.ingress << ", p" << node.priority << ")"
+           << " in<-(" << in_edge.src_switch << ", e" << in_edge.src_egress << ")"
+           << " out->(" << out_edge.dst_switch << ", q" << out_edge.dst_ingress << ")" << endl;
+    }
 
     ss << "boundary ingress qid: cenq, demand" << endl;
     for (unsigned int q = 0; q < in_queues.size(); q++) {

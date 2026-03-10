@@ -2,6 +2,7 @@
 #define CBD_SHARED_BUFFER_HPP
 
 #include <memory>
+#include <tuple>
 
 #include "cenq.hpp"
 #include "demand.hpp"
@@ -19,6 +20,28 @@ struct CBDRingEdge {
     unsigned int priority = 0;
 };
 
+struct CBDNodeRef {
+    cid_t switch_id;
+    unsigned int ingress;
+    unsigned int priority = 0;
+
+    bool operator<(const CBDNodeRef& other) const {
+        return std::tie(switch_id, ingress, priority) <
+               std::tie(other.switch_id, other.ingress, other.priority);
+    }
+};
+
+struct CBDEgressRef {
+    cid_t switch_id;
+    unsigned int egress;
+    unsigned int priority = 0;
+
+    bool operator<(const CBDEgressRef& other) const {
+        return std::tie(switch_id, egress, priority) <
+               std::tie(other.switch_id, other.egress, other.priority);
+    }
+};
+
 struct CBDSharedBufferSwitchConfig {
     cid_t switch_id;
     SharedBufferSwitchInfo switch_info;
@@ -33,19 +56,33 @@ public:
                       std::vector<CBDRingEdge> ring_edges);
 
     const std::vector<CBDRingEdge>& ring_edges() const;
+    const std::vector<CBDNodeRef>& ring_nodes() const;
+    const CBDRingEdge& incoming_ring_edge(const CBDNodeRef& node) const;
+    const CBDRingEdge& outgoing_ring_edge(const CBDNodeRef& node) const;
+    const CBDRingEdge& ring_edge_for_egress(const CBDEgressRef& egress) const;
+    bool is_ring_ingress(const CBDNodeRef& node) const;
+    bool is_ring_egress(const CBDEgressRef& egress) const;
 
 private:
     std::vector<CBDSharedBufferSwitchConfig> switch_configs_;
     std::vector<CBDRingEdge> ring_edges_;
+    std::vector<CBDNodeRef> ring_nodes_;
     std::vector<cid_t> switch_order_;
     std::map<cid_t, SharedBufferSwitchQM*> switch_qms_;
     std::map<cid_t, unsigned int> boundary_ingress_ser_factor_;
+    std::map<CBDNodeRef, unsigned int> incoming_ring_edge_idx_;
+    std::map<CBDNodeRef, unsigned int> outgoing_ring_edge_idx_;
+    std::map<CBDEgressRef, unsigned int> ring_edge_idx_by_egress_;
 
     std::vector<CEnq*> cenq_;
     std::vector<CEnq*> out_cenq_;
     std::vector<Demand*> demand_;
     std::vector<Dst*> dst_;
 
+    CBDNodeRef src_node(const CBDRingEdge& edge) const;
+    CBDNodeRef dst_node(const CBDRingEdge& edge) const;
+    CBDEgressRef src_egress(const CBDRingEdge& edge) const;
+    void validate_and_index_ring();
     void add_nodes() override;
     void add_edges() override;
     void add_metrics() override;
