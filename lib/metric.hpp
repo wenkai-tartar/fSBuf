@@ -28,7 +28,8 @@ enum class metric_t {
     CBLOCKED,
     DEQ,
     DEMAND,
-    CBD_WAIT_EDGE
+    CBD_WAIT_EDGE,
+    CBD_DEADLOCK_NODE
 };
 
 enum class metric_granularity_t { PACKET = 0, TIMESTEP };

@@ -84,6 +84,22 @@ expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t
            dst_qm->cbd_ingress_paused(edge.dst_ingress, t, edge.priority);
 }
 
+expr CBDSharedBufferCP::ring_node_deadlock(const CBDNodeRef& node, unsigned int t) const {
+    auto qm_it = switch_qms_.find(node.switch_id);
+    if (qm_it == switch_qms_.end()) {
+        throw runtime_error("CBDSharedBufferCP ring node references unknown switch in ring_node_deadlock");
+    }
+
+    SharedBufferSwitchQM* qm = qm_it->second;
+    const CBDRingEdge& in_edge = incoming_ring_edge(node);
+    const CBDRingEdge& out_edge = outgoing_ring_edge(node);
+
+    return qm->cbd_ingress_has_pkt(node.ingress, t, node.priority) &&
+           qm->cbd_ingress_paused(node.ingress, t, node.priority) &&
+           qm->cbd_ingress_no_progress(node.ingress, t, node.priority) &&
+           ring_edge_active(in_edge, t) && ring_edge_active(out_edge, t);
+}
+
 void CBDSharedBufferCP::validate_and_index_ring() {
     ring_nodes_.clear();
     incoming_ring_edge_idx_.clear();
@@ -276,6 +292,25 @@ void CBDSharedBufferCP::add_metrics() {
         metrics[metric_t::CBD_WAIT_EDGE][queue->get_id()] = wait_edge;
         queue->add_metric(metric_t::CBD_WAIT_EDGE, wait_edge);
     }
+
+    for (const CBDNodeRef& node : ring_nodes_) {
+        auto qm_it = switch_qms_.find(node.switch_id);
+        if (qm_it == switch_qms_.end()) {
+            throw runtime_error("CBDSharedBufferCP ring node references unknown switch in add_metrics");
+        }
+
+        Queue* queue = qm_it->second->get_in_queue(node.ingress);
+        vector<expr> blocked_exprs;
+        blocked_exprs.reserve(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            blocked_exprs.push_back(ring_node_deadlock(node, t));
+        }
+
+        CBDDeadlockNode* deadlock_node = new CBDDeadlockNode(queue, total_time, blocked_exprs, net_ctx);
+        cbd_deadlock_node_.push_back(deadlock_node);
+        metrics[metric_t::CBD_DEADLOCK_NODE][queue->get_id()] = deadlock_node;
+        queue->add_metric(metric_t::CBD_DEADLOCK_NODE, deadlock_node);
+    }
 }
 
 void CBDSharedBufferCP::add_in_queue_constrs() {
@@ -342,6 +377,13 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
         ss << "(" << edge.src_switch << ", q" << edge.src_ingress << ", e" << edge.src_egress
            << ") -> (" << edge.dst_switch << ", q" << edge.dst_ingress << ", p" << edge.priority
            << "): " << m.eval(cbd_wait_edge_[edge_idx]->val(t).second).get_numeral_int() << endl;
+    }
+
+    ss << "ring nodes: deadlock" << endl;
+    for (unsigned int node_idx = 0; node_idx < ring_nodes_.size(); node_idx++) {
+        const CBDNodeRef& node = ring_nodes_[node_idx];
+        ss << "(" << node.switch_id << ", q" << node.ingress << ", p" << node.priority
+           << "): " << m.eval(cbd_deadlock_node_[node_idx]->val(t).second).get_numeral_int() << endl;
     }
 
     ss << "boundary ingress qid: cenq, demand" << endl;
