@@ -109,6 +109,11 @@ void SONiCSwitch::add_in_queue_constrs() {
 }
 
 void SONiCSwitch::add_metrics() {
+    SharedBufferSwitchQM* sb_qm = dynamic_cast<SharedBufferSwitchQM*>(id_to_qm["SB_CORE"]);
+    if (sb_qm == nullptr) {
+        throw runtime_error("SONiCSwitch SB_CORE is not a SharedBufferSwitchQM");
+    }
+
     // Input CEnq
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];
@@ -125,6 +130,20 @@ void SONiCSwitch::add_metrics() {
         out_cenq_.push_back(ce);
         metrics[metric_t::CENQ][queue->get_id()] = ce;
         queue->add_metric(metric_t::CENQ, ce);
+    }
+
+    // Output PFC-blocked bit
+    for (unsigned int e = 0; e < out_queues.size(); e++) {
+        Queue* queue = out_queues[e];
+        vector<expr> blocked_exprs;
+        blocked_exprs.reserve(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            blocked_exprs.push_back(sb_qm->pfc_blocked(e, t));
+        }
+        PFCBlocked* pb = new PFCBlocked(queue, total_time, blocked_exprs, net_ctx);
+        pfc_blocked_.push_back(pb);
+        metrics[metric_t::PFC_BLOCKED][queue->get_id()] = pb;
+        queue->add_metric(metric_t::PFC_BLOCKED, pb);
     }
 
     // Demand
@@ -150,11 +169,19 @@ string SONiCSwitch::cp_model_str(model& m, NetContext& net_ctx, unsigned int t) 
     stringstream ss;
     ss << "egress_queues=" << switch_info_.egress_queue_cnt
        << ", ingress_queues=" << switch_info_.ingress_queue_cnt << endl;
-    ss << "qid: cenq, demand" << endl;
+    ss << "ingress qid: cenq, demand" << endl;
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];
         ss << queue->get_id() << ": " << m.eval(cenq_[q]->val(t).second).get_numeral_int();
         ss << ", " << m.eval(demand_[q]->val(t).second).get_numeral_int();
+        ss << endl;
+    }
+
+    ss << "egress qid: cenq, pfc_blocked" << endl;
+    for (unsigned int e = 0; e < out_queues.size(); e++) {
+        Queue* queue = out_queues[e];
+        ss << queue->get_id() << ": " << m.eval(out_cenq_[e]->val(t).second).get_numeral_int();
+        ss << ", " << m.eval(pfc_blocked_[e]->val(t).second).get_numeral_int();
         ss << endl;
     }
 

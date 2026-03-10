@@ -52,6 +52,7 @@ public:
     unsigned int egress_serialization_factor(unsigned int e) const;
 
     const expr& ingress_paused(unsigned int q, unsigned int t) const;
+    const expr& pfc_blocked(unsigned int e, unsigned int t) const;
     const expr& slot_pkt(unsigned int b, unsigned int t, unsigned int k) const;
     string debug_model_str(model& m, NetContext& net_ctx, unsigned int t) const;
 
@@ -103,6 +104,7 @@ private:
 
     vector<vector<expr>> min_stamp_e_; // [e][t] int
     vector<vector<expr>> has_pkt_e_;   // [e][t] bool
+    vector<vector<expr>> pfc_blocked_; // [e][t] bool, egress has pending pkt but is paused
 };
 
 #endif /* shared_buffer_switch_qm_hpp */

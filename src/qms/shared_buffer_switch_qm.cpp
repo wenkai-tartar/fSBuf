@@ -77,6 +77,10 @@ const expr& SharedBufferSwitchQM::ingress_paused(unsigned int q, unsigned int t)
     return ingress_paused_[q][t];
 }
 
+const expr& SharedBufferSwitchQM::pfc_blocked(unsigned int e, unsigned int t) const {
+    return pfc_blocked_[e][t];
+}
+
 const expr& SharedBufferSwitchQM::slot_pkt(unsigned int b, unsigned int t, unsigned int k) const {
     return buf_pkt_[b][t][k];
 }
@@ -177,6 +181,7 @@ string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsi
         ss << " e" << e << "(sender_paused=" << (eval_bool(outq->sender_paused(t)) ? 1 : 0)
            << ", can_emit=" << (can_emit ? 1 : 0)
            << ", has_pkt=" << (eval_bool(has_pkt_e_[e][t]) ? 1 : 0)
+           << ", blocked=" << (eval_bool(pfc_blocked_[e][t]) ? 1 : 0)
            << ", min_stamp=" << eval_int(min_stamp_e_[e][t]) << ")";
     }
     ss << endl;
@@ -259,6 +264,7 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
     buf_e_.clear();
     buf_stamp_.clear();
     ingress_paused_.clear();
+    pfc_blocked_.clear();
     ingress_pool_occ_.clear();
     ingress_pool_total_occ_.clear();
     headroom_pool_occ_.clear();
@@ -281,6 +287,7 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
     buf_e_.resize(slot_cnt);
     buf_stamp_.resize(slot_cnt);
     ingress_paused_.resize(in_cnt);
+    pfc_blocked_.resize(eg_cnt);
     ingress_pool_occ_.resize(in_cnt);
     ingress_pool_total_occ_.resize(total_time);
     headroom_pool_occ_.resize(in_cnt);
@@ -369,6 +376,14 @@ void SharedBufferSwitchQM::add_proc_vars(NetContext& net_ctx) {
                     write_slot_[q][b][t].push_back(net_ctx.bool_const(vname));
                 }
             }
+        }
+    }
+
+    for (unsigned int e = 0; e < eg_cnt; e++) {
+        pfc_blocked_[e].reserve(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            snprintf(vname, sizeof(vname), "%s_pfc_blocked[%u][%u]", id.c_str(), e, t);
+            pfc_blocked_[e].push_back(net_ctx.bool_const(vname));
         }
     }
 
@@ -1723,6 +1738,24 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
             constr_map.insert(
                 named_constr(constr_name,
                              buf_stamp_[b][t + 1][0] == buf_stamp_[b][t][micro_steps]));
+        }
+    }
+
+    // FAST_STEADY egress PFC-blocked predicate.
+    for (unsigned int t = 0; t < total_time; t++) {
+        for (unsigned int e = 0; e < eg_cnt; e++) {
+            const SBQueue* outq = egress_sb_queue(e);
+            snprintf(constr_name,
+                     sizeof(constr_name),
+                     "%s_pfc_blocked_def_e%u_t%u",
+                     id.c_str(),
+                     e,
+                     t);
+            // An egress is PFC-blocked when it has at least one pending packet but cannot emit
+            // because the downstream receiver has paused this interface.
+            constr_map.insert(named_constr(
+                constr_name,
+                pfc_blocked_[e][t] == (has_pkt_e_[e][t] && outq->sender_paused(t))));
         }
     }
 }
