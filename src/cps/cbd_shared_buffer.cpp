@@ -275,6 +275,27 @@ void CBDSharedBufferCP::add_metrics() {
         queue->add_metric(metric_t::CENQ, ce);
     }
 
+    for (const cid_t& switch_id : switch_order_) {
+        SharedBufferSwitchQM* qm = get_switch_qm(switch_id);
+        for (unsigned int q = 0; q < qm->in_queue_cnt(); q++) {
+            Queue* queue = qm->get_in_queue(q);
+            if (metrics[metric_t::CENQ].find(queue->get_id()) == metrics[metric_t::CENQ].end()) {
+                CEnq* ce = new CEnq(queue, total_time, net_ctx);
+                metrics[metric_t::CENQ][queue->get_id()] = ce;
+                queue->add_metric(metric_t::CENQ, ce);
+            }
+        }
+
+        for (unsigned int q = 0; q < qm->out_queue_cnt(); q++) {
+            Queue* queue = qm->get_out_queue(q);
+            if (metrics[metric_t::CENQ].find(queue->get_id()) == metrics[metric_t::CENQ].end()) {
+                CEnq* ce = new CEnq(queue, total_time, net_ctx);
+                metrics[metric_t::CENQ][queue->get_id()] = ce;
+                queue->add_metric(metric_t::CENQ, ce);
+            }
+        }
+    }
+
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];
         Demand* d = new Demand(queue, total_time, net_ctx);
