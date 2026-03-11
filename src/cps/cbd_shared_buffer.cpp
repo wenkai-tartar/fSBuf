@@ -68,6 +68,18 @@ CBDEgressRef CBDSharedBufferCP::src_egress(const CBDRingEdge& edge) const {
     return CBDEgressRef{edge.src_switch, edge.src_egress, edge.priority};
 }
 
+expr CBDSharedBufferCP::ring_edge_pending_to_egress(const CBDRingEdge& edge, unsigned int t) const {
+    auto src_it = switch_qms_.find(edge.src_switch);
+    if (src_it == switch_qms_.end()) {
+        throw runtime_error(
+            "CBDSharedBufferCP ring edge references unknown switch in ring_edge_pending_to_egress");
+    }
+
+    SharedBufferSwitchQM* src_qm = src_it->second;
+    return src_qm->cbd_ingress_pending_to_egress(
+        edge.src_ingress, edge.src_egress, t, edge.priority);
+}
+
 expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t) const {
     auto src_it = switch_qms_.find(edge.src_switch);
     auto dst_it = switch_qms_.find(edge.dst_switch);
@@ -78,7 +90,7 @@ expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t
     SharedBufferSwitchQM* src_qm = src_it->second;
     SharedBufferSwitchQM* dst_qm = dst_it->second;
 
-    return src_qm->cbd_ingress_pending_to_egress(edge.src_ingress, edge.src_egress, t, edge.priority) &&
+    return ring_edge_pending_to_egress(edge, t) &&
            src_qm->egress_blocked(edge.src_egress, t, edge.priority) &&
            dst_qm->cbd_ingress_has_pkt(edge.dst_ingress, t, edge.priority) &&
            dst_qm->cbd_ingress_paused(edge.dst_ingress, t, edge.priority);
@@ -357,11 +369,12 @@ void CBDSharedBufferCP::add_in_queue_constrs() {
                 can_inject = can_inject && !net_ctx.pkt2val(inq->enqs(0)[t - dt]);
             }
 
-            snprintf(constr_name, sizeof(constr_name), "cbd_boundary_enq_from_demand_q%u_t%u", q, t);
-            new_constr_map.insert(
-                named_constr(constr_name,
-                             net_ctx.pkt2val(inq->enqs(0)[t]) ==
-                                 (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
+            snprintf(
+                constr_name, sizeof(constr_name), "cbd_boundary_enq_requires_demand_q%u_t%u", q, t);
+            new_constr_map.insert(named_constr(
+                constr_name,
+                net_ctx.pkt2val(inq->enqs(0)[t]) ==
+                    (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
 
             snprintf(
                 constr_name, sizeof(constr_name), "cbd_boundary_meta1_from_demand_dst_q%u_t%u", q, t);

@@ -4,9 +4,9 @@
 #include <memory>
 #include <tuple>
 
+#include "cenq.hpp"
 #include "cbd_deadlock_node.hpp"
 #include "cbd_wait_edge.hpp"
-#include "cenq.hpp"
 #include "demand.hpp"
 #include "demand_dst.hpp"
 #include "dst.hpp"
@@ -88,6 +88,7 @@ private:
     CBDNodeRef src_node(const CBDRingEdge& edge) const;
     CBDNodeRef dst_node(const CBDRingEdge& edge) const;
     CBDEgressRef src_egress(const CBDRingEdge& edge) const;
+    expr ring_edge_pending_to_egress(const CBDRingEdge& edge, unsigned int t) const;
     expr ring_edge_active(const CBDRingEdge& edge, unsigned int t) const;
     expr ring_node_deadlock(const CBDNodeRef& node, unsigned int t) const;
     void validate_and_index_ring();
