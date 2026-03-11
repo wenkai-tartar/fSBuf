@@ -12,6 +12,7 @@
 
 #include "cenq.hpp"
 #include "demand.hpp"
+#include "demand_dst.hpp"
 #include "dst.hpp"
 #include "shared_buffer_point.hpp"
 #include "shared_buffer_route_policy.hpp"
@@ -33,6 +34,7 @@ private:
     vector<CEnq*> cenq_;
     vector<CEnq*> out_cenq_;
     vector<Demand*> demand_;
+    vector<DemandDst*> demand_dst_;
     vector<Dst*> dst_;
 
     void add_nodes() override;

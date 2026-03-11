@@ -268,6 +268,14 @@ void CBDSharedBufferCP::add_metrics() {
 
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];
+        DemandDst* d = new DemandDst(queue, total_time, net_ctx);
+        demand_dst_.push_back(d);
+        metrics[metric_t::DEMAND_DST][queue->get_id()] = d;
+        queue->add_metric(metric_t::DEMAND_DST, d);
+    }
+
+    for (unsigned int q = 0; q < in_queues.size(); q++) {
+        Queue* queue = in_queues[q];
         Dst* d = new Dst(queue, total_time, net_ctx);
         dst_.push_back(d);
         metrics[metric_t::DST][queue->get_id()] = d;
@@ -327,6 +335,10 @@ void CBDSharedBufferCP::add_in_queue_constrs() {
 
         Metric* demand_metric = inq->get_metric(metric_t::DEMAND);
         if (demand_metric == nullptr) continue;
+        Metric* demand_dst_metric = inq->get_metric(metric_t::DEMAND_DST);
+        if (demand_dst_metric == nullptr) {
+            throw runtime_error("CBDSharedBufferCP boundary ingress missing DEMAND_DST metric");
+        }
 
         unsigned int ser_factor = 1;
         auto sf_it = boundary_ingress_ser_factor_.find(inq->get_id());
@@ -350,6 +362,13 @@ void CBDSharedBufferCP::add_in_queue_constrs() {
                 named_constr(constr_name,
                              net_ctx.pkt2val(inq->enqs(0)[t]) ==
                                  (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
+
+            snprintf(
+                constr_name, sizeof(constr_name), "cbd_boundary_meta1_from_demand_dst_q%u_t%u", q, t);
+            new_constr_map.insert(named_constr(
+                constr_name,
+                implies(net_ctx.pkt2val(inq->enqs(0)[t]),
+                        net_ctx.pkt2meta1(inq->enqs(0)[t]) == demand_dst_metric->val(t).second)));
         }
     }
 
