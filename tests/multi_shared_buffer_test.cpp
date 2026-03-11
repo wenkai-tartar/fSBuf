@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "cbd_shared_buffer.hpp"
+#include "multi_shared_buffer.hpp"
 #include "query.hpp"
 
 using namespace std;
@@ -118,7 +119,67 @@ static bool test_cbd_shared_buffer_three_switch_deadlock() {
     return res != solver_res_t::UNKNOWN;
 }
 
+static bool test_two_switch_chain_base_workload_sat() {
+    const unsigned int total_time = 6;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    SharedBufferSwitchInfo s1_info;
+    s1_info.ingress_queue_cnt = 2; // q0 internal, q1 boundary ingress
+    s1_info.egress_queue_cnt = 2;  // e0 internal, e1 boundary egress
+    s1_info.buffer_slot_cnt = 4;
+    s1_info.ingress_pool_size = 4;
+    s1_info.headroom_pool_size = 4;
+    s1_info.egress_lossless_pool_size = 4;
+    s1_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
+
+    SharedBufferSwitchInfo s2_info = s1_info;
+
+    vector<MultiSharedBufferSwitchConfig> switch_configs;
+    switch_configs.reserve(2);
+
+    MultiSharedBufferSwitchConfig s1_cfg;
+    s1_cfg.switch_id = "S1";
+    s1_cfg.switch_info = s1_info;
+    s1_cfg.route_policy =
+        make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{1}, {0}});
+    switch_configs.push_back(std::move(s1_cfg));
+
+    MultiSharedBufferSwitchConfig s2_cfg;
+    s2_cfg.switch_id = "S2";
+    s2_cfg.switch_info = s2_info;
+    s2_cfg.route_policy =
+        make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{1}, {0}});
+    switch_configs.push_back(std::move(s2_cfg));
+
+    vector<MultiSharedBufferEdge> internal_edges = {
+        {"S1", 0, "S2", 0},
+    };
+
+    MultiSharedBufferCP cp(total_time, env_info, std::move(switch_configs), internal_edges);
+
+    Workload wl(8, cp.in_queue_cnt(), total_time);
+    wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0),
+                                   Op(Op::Type::EQ),
+                                   new Constant((int) total_time)),
+                          time_range_t(total_time - 1, total_time - 1),
+                          total_time));
+    wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND_DST, 0),
+                                   Op(Op::Type::EQ),
+                                   new Constant(0)),
+                          time_range_t(0, total_time - 1),
+                          total_time));
+
+    solver_res_t res = cp.check_workload_without_query(wl);
+    cout << "[two_switch_chain_base_workload_sat] result: " << res << endl;
+    return res == solver_res_t::SAT;
+}
+
 void MultiSharedBufferTest::add_to_runner(TestRunner* runner) {
+    runner->add_test_case("two_switch_chain_base_workload_sat",
+                          test_two_switch_chain_base_workload_sat);
     runner->add_test_case("cbd_shared_buffer_three_switch_deadlock",
                           test_cbd_shared_buffer_three_switch_deadlock);
 }
