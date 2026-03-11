@@ -31,14 +31,14 @@ void SONiCSwitch::add_nodes() {
     }
 
     QueueInfo in_info{};
-    in_info.size = MAX_QUEUE_SIZE;
+    in_info.size = 1;
     in_info.max_enq = 1;
     in_info.max_deq = 1;
     in_info.meta = 0;
     in_info.type = queue_t::SB_INGRESS;
 
     QueueInfo out_info{};
-    out_info.size = MAX_QUEUE_SIZE;
+    out_info.size = 1;
     out_info.max_enq = 1;
     out_info.max_deq = 1;
     out_info.meta = 0;
