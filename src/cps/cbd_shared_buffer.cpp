@@ -68,27 +68,51 @@ CBDEgressRef CBDSharedBufferCP::src_egress(const CBDRingEdge& edge) const {
     return CBDEgressRef{edge.src_switch, edge.src_egress, edge.priority};
 }
 
-expr CBDSharedBufferCP::ring_edge_pending_to_egress(const CBDRingEdge& edge, unsigned int t) const {
-    auto src_it = switch_qms_.find(edge.src_switch);
-    if (src_it == switch_qms_.end()) {
-        throw runtime_error(
-            "CBDSharedBufferCP ring edge references unknown switch in ring_edge_pending_to_egress");
+SharedBufferSwitchQM* CBDSharedBufferCP::get_switch_qm(const cid_t& switch_id) const {
+    auto it = id_to_qm.find(switch_id);
+    if (it == id_to_qm.end()) {
+        throw runtime_error("CBDSharedBufferCP references unknown switch id");
     }
 
-    SharedBufferSwitchQM* src_qm = src_it->second;
+    SharedBufferSwitchQM* qm = dynamic_cast<SharedBufferSwitchQM*>(it->second);
+    if (qm == nullptr) {
+        throw runtime_error("CBDSharedBufferCP switch id does not map to a SharedBufferSwitchQM");
+    }
+    return qm;
+}
+
+void CBDSharedBufferCP::populate_boundary_ingress_ser_factors() {
+    boundary_ingress_ser_factor_.clear();
+
+    for (Queue* queue : in_queues) {
+        bool found = false;
+        for (const cid_t& switch_id : switch_order_) {
+            SharedBufferSwitchQM* qm = get_switch_qm(switch_id);
+            for (unsigned int q = 0; q < qm->in_queue_cnt(); q++) {
+                if (qm->get_in_queue(q)->get_id() == queue->get_id()) {
+                    boundary_ingress_ser_factor_[queue->get_id()] = qm->ingress_serialization_factor(q);
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+
+        if (!found) {
+            throw runtime_error("CBDSharedBufferCP failed to resolve boundary ingress serialization factor");
+        }
+    }
+}
+
+expr CBDSharedBufferCP::ring_edge_pending_to_egress(const CBDRingEdge& edge, unsigned int t) const {
+    SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
     return src_qm->cbd_ingress_pending_to_egress(
         edge.src_ingress, edge.src_egress, t, edge.priority);
 }
 
 expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t) const {
-    auto src_it = switch_qms_.find(edge.src_switch);
-    auto dst_it = switch_qms_.find(edge.dst_switch);
-    if (src_it == switch_qms_.end() || dst_it == switch_qms_.end()) {
-        throw runtime_error("CBDSharedBufferCP ring edge references unknown switch in ring_edge_active");
-    }
-
-    SharedBufferSwitchQM* src_qm = src_it->second;
-    SharedBufferSwitchQM* dst_qm = dst_it->second;
+    SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
+    SharedBufferSwitchQM* dst_qm = get_switch_qm(edge.dst_switch);
 
     return ring_edge_pending_to_egress(edge, t) &&
            src_qm->egress_blocked(edge.src_egress, t, edge.priority) &&
@@ -97,12 +121,7 @@ expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t
 }
 
 expr CBDSharedBufferCP::ring_node_deadlock(const CBDNodeRef& node, unsigned int t) const {
-    auto qm_it = switch_qms_.find(node.switch_id);
-    if (qm_it == switch_qms_.end()) {
-        throw runtime_error("CBDSharedBufferCP ring node references unknown switch in ring_node_deadlock");
-    }
-
-    SharedBufferSwitchQM* qm = qm_it->second;
+    SharedBufferSwitchQM* qm = get_switch_qm(node.switch_id);
     const CBDRingEdge& in_edge = incoming_ring_edge(node);
     const CBDRingEdge& out_edge = outgoing_ring_edge(node);
 
@@ -210,31 +229,17 @@ void CBDSharedBufferCP::add_nodes() {
         nodes.push_back(switch_cfg.switch_id);
         switch_order_.push_back(switch_cfg.switch_id);
         id_to_qm[switch_cfg.switch_id] = sb_qm;
-        switch_qms_[switch_cfg.switch_id] = sb_qm;
-
-        for (unsigned int q = 0; q < switch_cfg.switch_info.ingress_queue_cnt; q++) {
-            boundary_ingress_ser_factor_[sb_qm->get_in_queue(q)->get_id()] =
-                sb_qm->ingress_serialization_factor(q);
-        }
     }
 }
 
 void CBDSharedBufferCP::add_edges() {
     for (const CBDRingEdge& edge : ring_edges_) {
-        auto src_it = switch_qms_.find(edge.src_switch);
-        auto dst_it = switch_qms_.find(edge.dst_switch);
-        if (src_it == switch_qms_.end()) {
-            throw runtime_error("CBDSharedBufferCP ring edge references unknown src switch");
-        }
-        if (dst_it == switch_qms_.end()) {
-            throw runtime_error("CBDSharedBufferCP ring edge references unknown dst switch");
-        }
         if (edge.priority != 0) {
             throw runtime_error("CBDSharedBufferCP currently only supports priority=0");
         }
 
-        SharedBufferSwitchQM* src_qm = src_it->second;
-        SharedBufferSwitchQM* dst_qm = dst_it->second;
+        SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
+        SharedBufferSwitchQM* dst_qm = get_switch_qm(edge.dst_switch);
         if (edge.src_egress >= src_qm->out_queue_cnt()) {
             throw runtime_error("CBDSharedBufferCP ring edge src_egress out of range");
         }
@@ -295,12 +300,7 @@ void CBDSharedBufferCP::add_metrics() {
     }
 
     for (const CBDRingEdge& edge : ring_edges_) {
-        auto src_it = switch_qms_.find(edge.src_switch);
-        if (src_it == switch_qms_.end()) {
-            throw runtime_error("CBDSharedBufferCP ring edge references unknown src switch in add_metrics");
-        }
-
-        Queue* queue = src_it->second->get_out_queue(edge.src_egress);
+        Queue* queue = get_switch_qm(edge.src_switch)->get_out_queue(edge.src_egress);
         vector<expr> active_exprs;
         active_exprs.reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
@@ -314,12 +314,7 @@ void CBDSharedBufferCP::add_metrics() {
     }
 
     for (const CBDNodeRef& node : ring_nodes_) {
-        auto qm_it = switch_qms_.find(node.switch_id);
-        if (qm_it == switch_qms_.end()) {
-            throw runtime_error("CBDSharedBufferCP ring node references unknown switch in add_metrics");
-        }
-
-        Queue* queue = qm_it->second->get_in_queue(node.ingress);
+        Queue* queue = get_switch_qm(node.switch_id)->get_in_queue(node.ingress);
         vector<expr> blocked_exprs;
         blocked_exprs.reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
@@ -335,6 +330,7 @@ void CBDSharedBufferCP::add_metrics() {
 
 void CBDSharedBufferCP::add_in_queue_constrs() {
     SharedBufferPoint::add_in_queue_constrs();
+    populate_boundary_ingress_ser_factors();
 
     map<string, expr> new_constr_map;
     char constr_name[160];
@@ -434,10 +430,7 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
     }
 
     for (const cid_t& switch_id : switch_order_) {
-        auto it = switch_qms_.find(switch_id);
-        if (it != switch_qms_.end()) {
-            ss << it->second->debug_model_str(m, net_ctx, t);
-        }
+        ss << get_switch_qm(switch_id)->debug_model_str(m, net_ctx, t);
     }
     return ss.str();
 }

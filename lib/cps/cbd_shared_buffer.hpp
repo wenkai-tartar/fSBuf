@@ -71,7 +71,6 @@ private:
     std::vector<CBDRingEdge> ring_edges_;
     std::vector<CBDNodeRef> ring_nodes_;
     std::vector<cid_t> switch_order_;
-    std::map<cid_t, SharedBufferSwitchQM*> switch_qms_;
     std::map<cid_t, unsigned int> boundary_ingress_ser_factor_;
     std::map<CBDNodeRef, unsigned int> incoming_ring_edge_idx_;
     std::map<CBDNodeRef, unsigned int> outgoing_ring_edge_idx_;
@@ -88,6 +87,8 @@ private:
     CBDNodeRef src_node(const CBDRingEdge& edge) const;
     CBDNodeRef dst_node(const CBDRingEdge& edge) const;
     CBDEgressRef src_egress(const CBDRingEdge& edge) const;
+    SharedBufferSwitchQM* get_switch_qm(const cid_t& switch_id) const;
+    void populate_boundary_ingress_ser_factors();
     expr ring_edge_pending_to_egress(const CBDRingEdge& edge, unsigned int t) const;
     expr ring_edge_active(const CBDRingEdge& edge, unsigned int t) const;
     expr ring_node_deadlock(const CBDNodeRef& node, unsigned int t) const;
