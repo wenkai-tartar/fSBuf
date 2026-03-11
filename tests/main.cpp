@@ -1,3 +1,4 @@
+#include "multi_shared_buffer_test.hpp"
 #include "rr_scheduler_test.hpp"
 #include "search_test.hpp"
 #include "shared_buffer_test.hpp"
@@ -25,6 +26,9 @@ int main(int argc, char** argv) {
 
     SharedBufferTest sharedBufferTest;
     sharedBufferTest.add_to_runner(&runner);
+
+    MultiSharedBufferTest multiSharedBufferTest;
+    multiSharedBufferTest.add_to_runner(&runner);
 
     bool result = runner.run(arguments);
 
