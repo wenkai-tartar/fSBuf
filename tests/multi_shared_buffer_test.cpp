@@ -108,7 +108,6 @@ static solver_res_t run_cbd_deadlock_query(unsigned int total_time,
     };
 
     CBDSharedBufferCP cp(total_time, env_info, make_switch_configs(), make_ring_edges());
-
     Workload wl(12, cp.in_queue_cnt(), total_time);
     for (unsigned int q = 0; q < cp.in_queue_cnt(); q++) {
         wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q),

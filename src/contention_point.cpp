@@ -1864,7 +1864,7 @@ expr ContentionPoint::get_expr(Query& query) {
     metric_t m = query.get_metric();
 
     if (metrics.find(m) == metrics.end()) {
-        cout << "ContentionPoint::get_expr(Query): Invalid Query" << endl;
+        cout << "ContentionPoint::get_expr(Query): Invalid Query: missing metric kind " << m << endl;
         query_expr = net_ctx.bool_val(false);
         return query_expr;
     }
@@ -1877,7 +1877,8 @@ expr ContentionPoint::get_expr(Query& query) {
         case 0: {
             cid_t qid = get<cid_t>(query_lhs);
             if (metrics[m].find(qid) == metrics[m].end()) {
-                cout << "ContentionPoint::get_expr(Query): Invalid Query" << endl;
+                cout << "ContentionPoint::get_expr(Query): Invalid Query: metric " << m
+                     << " missing for queue " << qid << endl;
                 query_expr = net_ctx.bool_val(false);
                 return query_expr;
             }
@@ -1892,7 +1893,8 @@ expr ContentionPoint::get_expr(Query& query) {
 
             if (metrics[m].find(qid1) == metrics[m].end() ||
                 metrics[m].find(qid2) == metrics[m].end()) {
-                cout << "ContentionPoint::get_expr(Query): Invalid Query" << endl;
+                cout << "ContentionPoint::get_expr(Query): Invalid Query: metric " << m
+                     << " missing for qdiff pair (" << qid1 << ", " << qid2 << ")" << endl;
                 query_expr = net_ctx.bool_val(false);
                 return query_expr;
             }
@@ -1907,7 +1909,8 @@ expr ContentionPoint::get_expr(Query& query) {
             for (unsigned int i = 0; i < ids.size(); i++) {
                 cid_t id = ids[i];
                 if (metrics[m].find(id) == metrics[m].end()) {
-                    cout << "ContentionPoint::get_expr(Query): Invalid Query" << endl;
+                    cout << "ContentionPoint::get_expr(Query): Invalid Query: metric " << m
+                         << " missing for qsum element " << id << endl;
                     query_expr = net_ctx.bool_val(false);
                     return query_expr;
                 }
