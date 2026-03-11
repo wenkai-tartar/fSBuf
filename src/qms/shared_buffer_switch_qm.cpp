@@ -124,9 +124,8 @@ expr SharedBufferSwitchQM::cbd_ingress_pending_to_egress(unsigned int q,
     return pending;
 }
 
-const expr& SharedBufferSwitchQM::egress_blocked(unsigned int e,
-                                                 unsigned int t,
-                                                 unsigned int priority) const {
+const expr&
+SharedBufferSwitchQM::egress_blocked(unsigned int e, unsigned int t, unsigned int priority) const {
     validate_priority(priority);
     return egress_blocked_[e][t];
 }
@@ -1114,19 +1113,6 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
 
             snprintf(constr_name,
                      sizeof(constr_name),
-                     "%s_read_deq_eq_e%u_t%u_k%u",
-                     id.c_str(),
-                     e,
-                     t,
-                     deq_k);
-            // TODO(shared-buffer): outq->deq_cnt(t) is only a compatibility counter for the
-            // number of packets served from shared buffer at slot t. Remove egress-queue-local
-            // deq_cnt semantics once output-side interfaces stop mirroring Queue counters.
-            // The number of slots read for egress e equals its interface dequeue count.
-            constr_map.insert(named_constr(constr_name, reads_this_e_t_sum == outq->deq_cnt(t)));
-
-            snprintf(constr_name,
-                     sizeof(constr_name),
                      "%s_single_read_per_egress_e%u_t%u_k%u",
                      id.c_str(),
                      e,
@@ -1676,16 +1662,6 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
         for (unsigned int e = 0; e < eg_cnt; e++) {
             expr reads_e = reads_from_e(e, t, deq_k);
             release_e_sum = release_e_sum + reads_e;
-
-            snprintf(constr_name,
-                     sizeof(constr_name),
-                     "%s_egress_deq_matches_reads_e%u_t%u",
-                     id.c_str(),
-                     e,
-                     t);
-            // Interface dequeue count for egress e matches the number of internal slots read for
-            // that egress in the dequeue micro-step.
-            constr_map.insert(named_constr(constr_name, out_queues[e]->deq_cnt(t) == reads_e));
         }
 
         snprintf(constr_name,
@@ -1795,17 +1771,13 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
     for (unsigned int t = 0; t < total_time; t++) {
         for (unsigned int e = 0; e < eg_cnt; e++) {
             const SBQueue* outq = egress_sb_queue(e);
-            snprintf(constr_name,
-                     sizeof(constr_name),
-                     "%s_pfc_blocked_def_e%u_t%u",
-                     id.c_str(),
-                     e,
-                     t);
+            snprintf(
+                constr_name, sizeof(constr_name), "%s_pfc_blocked_def_e%u_t%u", id.c_str(), e, t);
             // An egress is PFC-blocked when it has at least one pending packet but cannot emit
             // because the downstream receiver has paused this interface.
-            constr_map.insert(named_constr(
-                constr_name,
-                egress_blocked_[e][t] == (has_pkt_e_[e][t] && outq->sender_paused(t))));
+            constr_map.insert(named_constr(constr_name,
+                                           egress_blocked_[e][t] ==
+                                               (has_pkt_e_[e][t] && outq->sender_paused(t))));
         }
     }
 }
