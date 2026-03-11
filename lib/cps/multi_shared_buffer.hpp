@@ -6,6 +6,7 @@
 #include "cenq.hpp"
 #include "demand.hpp"
 #include "dst.hpp"
+#include "sender_paused.hpp"
 #include "shared_buffer_point.hpp"
 #include "shared_buffer_route_policy.hpp"
 #include "shared_buffer_switch_qm.hpp"
@@ -44,6 +45,7 @@ private:
     std::vector<CEnq*> switch_out_cenq_;
     std::vector<Demand*> demand_;
     std::vector<Dst*> dst_;
+    std::vector<SenderPaused*> sender_paused_;
 
     SharedBufferSwitchQM* get_switch_qm(const cid_t& switch_id) const;
     void populate_boundary_ingress_ser_factors();

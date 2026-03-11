@@ -225,6 +225,32 @@ static Workload make_two_switch_chain_full_rate_workload(MultiSharedBufferCP& cp
     return wl;
 }
 
+static Workload make_two_switch_chain_four_packet_burst_workload(MultiSharedBufferCP& cp,
+                                                                 unsigned int total_time) {
+    Workload wl(13, cp.in_queue_cnt(), total_time);
+    wl.add_spec(
+        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
+                  time_range_t(0, 0),
+                  total_time));
+    wl.add_spec(
+        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(2)),
+                  time_range_t(1, 1),
+                  total_time));
+    wl.add_spec(
+        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(3)),
+                  time_range_t(2, 2),
+                  total_time));
+    wl.add_spec(
+        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(4)),
+                  time_range_t(3, 3),
+                  total_time));
+    wl.add_spec(
+        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(4)),
+                  time_range_t(total_time - 1, total_time - 1),
+                  total_time));
+    return wl;
+}
+
 static Workload make_two_switch_chain_t0_single_packet_workload(MultiSharedBufferCP& cp,
                                                                 unsigned int total_time) {
     Workload wl(10, cp.in_queue_cnt(), total_time);
@@ -660,6 +686,88 @@ static bool test_two_switch_chain_backpressure_limits_source_enqueues() {
     return res == solver_res_t::UNSAT;
 }
 
+static bool test_two_switch_chain_backpressure_eventually_pauses_source() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    TwoSwitchChainConfig cfg;
+    cfg.s1_buffer_slots = 2;
+    cfg.s1_ingress_pool = 2;
+    cfg.s1_headroom_pool = 2;
+    cfg.s1_egress_pool = 2;
+    cfg.s2_buffer_slots = 2;
+    cfg.s2_ingress_pool = 2;
+    cfg.s2_headroom_pool = 2;
+    cfg.s2_egress_pool = 2;
+    cfg.s2_egress_ser = 2;
+
+    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info, cfg);
+    cp.set_base_workload(make_two_switch_chain_full_rate_workload(cp, total_time));
+
+    cid_t src_qid = cp.get_in_queues()[0]->get_id();
+    Query query(query_quant_t::EXISTS,
+                time_range_t(0, total_time - 1),
+                src_qid,
+                metric_t::SENDER_PAUSED,
+                Op(Op::Type::GE),
+                1);
+    cp.set_query(query);
+
+    solver_res_t res = cp.satisfy_query();
+    cout << "[two_switch_chain_backpressure_eventually_pauses_source] result: " << res << endl;
+    return res == solver_res_t::SAT;
+}
+
+static bool test_two_switch_chain_burst_pause_then_resume() {
+    const unsigned int total_time = 10;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    TwoSwitchChainConfig cfg;
+    cfg.s1_buffer_slots = 2;
+    cfg.s1_ingress_pool = 2;
+    cfg.s1_headroom_pool = 2;
+    cfg.s1_egress_pool = 2;
+    cfg.s2_buffer_slots = 2;
+    cfg.s2_ingress_pool = 2;
+    cfg.s2_headroom_pool = 2;
+    cfg.s2_egress_pool = 2;
+    cfg.s2_egress_ser = 2;
+
+    MultiSharedBufferCP paused_cp = make_two_switch_chain_cp(total_time, env_info, cfg);
+    paused_cp.set_base_workload(make_two_switch_chain_four_packet_burst_workload(paused_cp, total_time));
+    cid_t paused_src_qid = paused_cp.get_in_queues()[0]->get_id();
+    Query paused_query(query_quant_t::EXISTS,
+                       time_range_t(0, 6),
+                       paused_src_qid,
+                       metric_t::SENDER_PAUSED,
+                       Op(Op::Type::GE),
+                       1);
+    paused_cp.set_query(paused_query);
+    solver_res_t paused_res = paused_cp.satisfy_query();
+    cout << "[two_switch_chain_burst_pause_then_resume] paused result: " << paused_res << endl;
+
+    MultiSharedBufferCP resumed_cp = make_two_switch_chain_cp(total_time, env_info, cfg);
+    resumed_cp.set_base_workload(make_two_switch_chain_four_packet_burst_workload(resumed_cp, total_time));
+    cid_t resumed_src_qid = resumed_cp.get_in_queues()[0]->get_id();
+    Query resumed_query(query_quant_t::FORALL,
+                        time_range_t(7, total_time - 1),
+                        resumed_src_qid,
+                        metric_t::SENDER_PAUSED,
+                        Op(Op::Type::EQ),
+                        0);
+    resumed_cp.set_query(resumed_query);
+    solver_res_t resumed_res = resumed_cp.satisfy_query();
+    cout << "[two_switch_chain_burst_pause_then_resume] resumed result: " << resumed_res << endl;
+
+    return paused_res == solver_res_t::SAT && resumed_res == solver_res_t::SAT;
+}
+
 void MultiSharedBufferTest::add_to_runner(TestRunner* runner) {
     runner->add_test_case("two_switch_chain_base_workload_sat",
                           test_two_switch_chain_base_workload_sat);
@@ -691,6 +799,10 @@ void MultiSharedBufferTest::add_to_runner(TestRunner* runner) {
                           test_two_switch_chain_downstream_bottleneck_no_delivery_ge_4_by_t7);
     runner->add_test_case("two_switch_chain_backpressure_limits_source_enqueues",
                           test_two_switch_chain_backpressure_limits_source_enqueues);
+    runner->add_test_case("two_switch_chain_backpressure_eventually_pauses_source",
+                          test_two_switch_chain_backpressure_eventually_pauses_source);
+    runner->add_test_case("two_switch_chain_burst_pause_then_resume",
+                          test_two_switch_chain_burst_pause_then_resume);
     runner->add_test_case("two_switch_chain_end_to_end_delivery_sat",
                           test_two_switch_chain_end_to_end_delivery_sat);
     runner->add_test_case("cbd_shared_buffer_three_switch_deadlock",

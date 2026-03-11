@@ -166,6 +166,38 @@ void MultiSharedBufferCP::add_metrics() {
         metrics[metric_t::DST][queue->get_id()] = d;
         queue->add_metric(metric_t::DST, d);
     }
+
+    for (unsigned int q = 0; q < in_queues.size(); q++) {
+        SBQueue* queue = dynamic_cast<SBQueue*>(in_queues[q]);
+        if (queue == nullptr) {
+            throw runtime_error("MultiSharedBufferCP boundary ingress queue is not an SBQueue");
+        }
+        vector<expr> paused_exprs;
+        paused_exprs.reserve(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            paused_exprs.push_back(queue->sender_paused(t));
+        }
+        SenderPaused* sp = new SenderPaused(queue, total_time, paused_exprs, net_ctx);
+        sender_paused_.push_back(sp);
+        metrics[metric_t::SENDER_PAUSED][queue->get_id()] = sp;
+        queue->add_metric(metric_t::SENDER_PAUSED, sp);
+    }
+
+    for (unsigned int e = 0; e < out_queues.size(); e++) {
+        SBQueue* queue = dynamic_cast<SBQueue*>(out_queues[e]);
+        if (queue == nullptr) {
+            throw runtime_error("MultiSharedBufferCP boundary egress queue is not an SBQueue");
+        }
+        vector<expr> paused_exprs;
+        paused_exprs.reserve(total_time);
+        for (unsigned int t = 0; t < total_time; t++) {
+            paused_exprs.push_back(queue->sender_paused(t));
+        }
+        SenderPaused* sp = new SenderPaused(queue, total_time, paused_exprs, net_ctx);
+        sender_paused_.push_back(sp);
+        metrics[metric_t::SENDER_PAUSED][queue->get_id()] = sp;
+        queue->add_metric(metric_t::SENDER_PAUSED, sp);
+    }
 }
 
 void MultiSharedBufferCP::add_in_queue_constrs() {
