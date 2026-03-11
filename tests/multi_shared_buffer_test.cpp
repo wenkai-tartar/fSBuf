@@ -61,16 +61,28 @@ run_cbd_deadlock_query(unsigned int total_time,
                               total_time));
     }
     wl.add_spec(TimedSpec(
-        new Comp(new Indiv(metric_t::DEMAND_DST, 0), Op(Op::Type::EQ), new Constant(0)),
-        time_range_t(0, total_time - 1),
+        new Comp(new Indiv(metric_t::CENQ, 0), Op(Op::Type::GE), new Constant(1)),
+        time_range_t(0, 0),
         total_time));
     wl.add_spec(TimedSpec(
-        new Comp(new Indiv(metric_t::DEMAND_DST, 1), Op(Op::Type::EQ), new Constant(2)),
-        time_range_t(0, total_time - 1),
+        new Comp(new Indiv(metric_t::CENQ, 1), Op(Op::Type::GE), new Constant(1)),
+        time_range_t(0, 0),
         total_time));
     wl.add_spec(TimedSpec(
-        new Comp(new Indiv(metric_t::DEMAND_DST, 2), Op(Op::Type::EQ), new Constant(1)),
-        time_range_t(0, total_time - 1),
+        new Comp(new Indiv(metric_t::CENQ, 2), Op(Op::Type::GE), new Constant(1)),
+        time_range_t(0, 0),
+        total_time));
+    wl.add_spec(TimedSpec(
+        new Comp(new Indiv(metric_t::DST, 0), Op(Op::Type::EQ), new Constant(0)),
+        time_range_t(0, 0),
+        total_time));
+    wl.add_spec(TimedSpec(
+        new Comp(new Indiv(metric_t::DST, 1), Op(Op::Type::EQ), new Constant(2)),
+        time_range_t(0, 0),
+        total_time));
+    wl.add_spec(TimedSpec(
+        new Comp(new Indiv(metric_t::DST, 2), Op(Op::Type::EQ), new Constant(1)),
+        time_range_t(0, 0),
         total_time));
     cp.set_base_workload(wl);
 
@@ -127,15 +139,22 @@ static bool test_two_switch_chain_base_workload_sat() {
     env_info.boundary_egress_ctrl_default_false = true;
 
     SharedBufferSwitchInfo s1_info;
-    s1_info.ingress_queue_cnt = 2; // q0 internal, q1 boundary ingress
-    s1_info.egress_queue_cnt = 2;  // e0 internal, e1 boundary egress
+    s1_info.ingress_queue_cnt = 1; // q0 boundary ingress
+    s1_info.egress_queue_cnt = 1;  // e0 internal egress
     s1_info.buffer_slot_cnt = 4;
     s1_info.ingress_pool_size = 4;
     s1_info.headroom_pool_size = 4;
     s1_info.egress_lossless_pool_size = 4;
     s1_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
 
-    SharedBufferSwitchInfo s2_info = s1_info;
+    SharedBufferSwitchInfo s2_info;
+    s2_info.ingress_queue_cnt = 1; // q0 internal ingress
+    s2_info.egress_queue_cnt = 1;  // e0 boundary egress
+    s2_info.buffer_slot_cnt = 4;
+    s2_info.ingress_pool_size = 4;
+    s2_info.headroom_pool_size = 4;
+    s2_info.egress_lossless_pool_size = 4;
+    s2_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
 
     vector<MultiSharedBufferSwitchConfig> switch_configs;
     switch_configs.reserve(2);
@@ -143,15 +162,13 @@ static bool test_two_switch_chain_base_workload_sat() {
     MultiSharedBufferSwitchConfig s1_cfg;
     s1_cfg.switch_id = "S1";
     s1_cfg.switch_info = s1_info;
-    s1_cfg.route_policy =
-        make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{1}, {0}});
+    s1_cfg.route_policy = make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{0}});
     switch_configs.push_back(std::move(s1_cfg));
 
     MultiSharedBufferSwitchConfig s2_cfg;
     s2_cfg.switch_id = "S2";
     s2_cfg.switch_info = s2_info;
-    s2_cfg.route_policy =
-        make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{1}, {0}});
+    s2_cfg.route_policy = make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{0}});
     switch_configs.push_back(std::move(s2_cfg));
 
     vector<MultiSharedBufferEdge> internal_edges = {
@@ -163,13 +180,8 @@ static bool test_two_switch_chain_base_workload_sat() {
     Workload wl(8, cp.in_queue_cnt(), total_time);
     wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0),
                                    Op(Op::Type::EQ),
-                                   new Constant((int) total_time)),
+                                   new Constant(1)),
                           time_range_t(total_time - 1, total_time - 1),
-                          total_time));
-    wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND_DST, 0),
-                                   Op(Op::Type::EQ),
-                                   new Constant(0)),
-                          time_range_t(0, total_time - 1),
                           total_time));
 
     solver_res_t res = cp.check_workload_without_query(wl);

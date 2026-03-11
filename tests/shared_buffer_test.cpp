@@ -7,6 +7,16 @@
 
 using namespace std;
 
+static void add_fixed_dst_specs(Workload& wl, unsigned int queue, unsigned int total_time, int dst_eq) {
+    wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::CENQ, queue), Op(Op::Type::GE), new Constant(1)),
+                          time_range_t(0, 0),
+                          total_time));
+    wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DST, queue), Op(Op::Type::EQ), new Constant(dst_eq)),
+                          time_range_t(0, 0),
+                          total_time));
+    wl.add_spec(TimedSpec(new Same(metric_t::DST, queue), time_range_t(0, total_time - 1), total_time));
+}
+
 static solver_res_t
 run_single_ingress_cenq_query(unsigned int total_time,
                               const SharedBufferEnvInfo& env_info,
@@ -23,11 +33,7 @@ run_single_ingress_cenq_query(unsigned int total_time,
         time_range_t(total_time - 1, total_time - 1),
         total_time));
     if (dst_eq >= 0) {
-        wl.add_spec(
-            TimedSpec(
-                new Comp(new Indiv(metric_t::DEMAND_DST, 0), Op(Op::Type::EQ), new Constant(dst_eq)),
-                      time_range_t(0, total_time - 1),
-                      total_time));
+        add_fixed_dst_specs(wl, 0, total_time, dst_eq);
     }
     sw.set_base_workload(wl);
 
@@ -60,11 +66,7 @@ run_single_ingress_cenq_query_at_time(unsigned int total_time,
         time_range_t(total_time - 1, total_time - 1),
         total_time));
     if (dst_eq >= 0) {
-        wl.add_spec(
-            TimedSpec(
-                new Comp(new Indiv(metric_t::DEMAND_DST, 0), Op(Op::Type::EQ), new Constant(dst_eq)),
-                      time_range_t(0, total_time - 1),
-                      total_time));
+        add_fixed_dst_specs(wl, 0, total_time, dst_eq);
     }
     sw.set_base_workload(wl);
 
@@ -102,12 +104,7 @@ run_output_cenq_query(unsigned int total_time,
         }
 
         if (q < dst_eq.size() && dst_eq[q] >= 0) {
-            wl.add_spec(TimedSpec(
-                new Comp(new Indiv(metric_t::DEMAND_DST, q),
-                         Op(Op::Type::EQ),
-                         new Constant(dst_eq[q])),
-                time_range_t(0, total_time - 1),
-                total_time));
+            add_fixed_dst_specs(wl, q, total_time, dst_eq[q]);
         }
     }
     sw.set_base_workload(wl);
@@ -150,12 +147,7 @@ run_ingress_cenq_diff_query(unsigned int total_time,
         }
 
         if (q < dst_eq.size() && dst_eq[q] >= 0) {
-            wl.add_spec(TimedSpec(
-                new Comp(new Indiv(metric_t::DEMAND_DST, q),
-                         Op(Op::Type::EQ),
-                         new Constant(dst_eq[q])),
-                time_range_t(0, total_time - 1),
-                total_time));
+            add_fixed_dst_specs(wl, q, total_time, dst_eq[q]);
         }
     }
     sw.set_base_workload(wl);

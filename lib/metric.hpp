@@ -28,7 +28,6 @@ enum class metric_t {
     CBLOCKED,
     DEQ,
     DEMAND,
-    DEMAND_DST,
     CBD_WAIT_EDGE,
     CBD_DEADLOCK_NODE
 };

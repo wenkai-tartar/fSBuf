@@ -5,7 +5,6 @@
 
 #include "cenq.hpp"
 #include "demand.hpp"
-#include "demand_dst.hpp"
 #include "dst.hpp"
 #include "shared_buffer_point.hpp"
 #include "shared_buffer_route_policy.hpp"
@@ -44,7 +43,6 @@ private:
     std::vector<CEnq*> switch_in_cenq_;
     std::vector<CEnq*> switch_out_cenq_;
     std::vector<Demand*> demand_;
-    std::vector<DemandDst*> demand_dst_;
     std::vector<Dst*> dst_;
 
     SharedBufferSwitchQM* get_switch_qm(const cid_t& switch_id) const;

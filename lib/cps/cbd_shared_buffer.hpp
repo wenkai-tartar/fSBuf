@@ -8,7 +8,6 @@
 #include "cbd_deadlock_node.hpp"
 #include "cbd_wait_edge.hpp"
 #include "demand.hpp"
-#include "demand_dst.hpp"
 #include "dst.hpp"
 #include "shared_buffer_point.hpp"
 #include "shared_buffer_route_policy.hpp"
@@ -81,7 +80,6 @@ private:
     std::vector<CBDWaitEdge*> cbd_wait_edge_;
     std::vector<CBDDeadlockNode*> cbd_deadlock_node_;
     std::vector<Demand*> demand_;
-    std::vector<DemandDst*> demand_dst_;
     std::vector<Dst*> dst_;
 
     CBDNodeRef src_node(const CBDRingEdge& edge) const;
