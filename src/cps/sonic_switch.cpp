@@ -95,17 +95,11 @@ void SONiCSwitch::add_in_queue_constrs() {
                 can_inject = can_inject && !net_ctx.pkt2val(inq->enqs(0)[t - dt]);
             }
 
-            snprintf(constr_name, sizeof(constr_name), "sb_boundary_enq_from_demand_q%u_t%u", q, t);
-            // TODO(shared-buffer-semantics): Replace this direct demand->arrival mapping with a
-            // SharedBufferSemanticPolicy hook. FAST_STEADY can keep driving inq->enqs(0)[t]
-            // directly from demand and sender_paused, while PRECISE_PFC should drive a launch
-            // signal first and then constrain delayed / residual arrivals onto inq->enqs(0)[t].
-            // Boundary ingress actual arrival is driven by demand, delayed sender-visible pause,
-            // and the local ingress port cooldown. Demand remains an independent intent signal.
-            new_constr_map.insert(
-                named_constr(constr_name,
-                             net_ctx.pkt2val(inq->enqs(0)[t]) ==
-                                 (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
+            snprintf(constr_name, sizeof(constr_name), "sb_boundary_enq_requires_demand_q%u_t%u", q, t);
+            new_constr_map.insert(named_constr(
+                constr_name,
+                net_ctx.pkt2val(inq->enqs(0)[t]) ==
+                    (demand_t > 0 && !inq->sender_paused(t) && can_inject)));
 
             snprintf(
                 constr_name, sizeof(constr_name), "sb_boundary_meta1_from_demand_dst_q%u_t%u", q, t);
