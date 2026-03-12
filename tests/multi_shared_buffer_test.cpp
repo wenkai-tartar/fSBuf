@@ -213,6 +213,73 @@ static Workload make_three_switch_cbd_t0_single_packet_workload(CBDSharedBufferC
     return wl;
 }
 
+static Workload make_three_switch_cbd_t0_single_packet_workload_without_source(
+    CBDSharedBufferCP& cp,
+    unsigned int total_time,
+    unsigned int missing_src_q) {
+    if (missing_src_q >= cp.in_queue_cnt()) {
+        throw runtime_error("CBD workload helper missing_src_q out of range");
+    }
+
+    Workload wl(16, cp.in_queue_cnt(), total_time);
+    const vector<int> fixed_dst = {0, 2, 1};
+
+    for (unsigned int q = 0; q < cp.in_queue_cnt(); q++) {
+        const int demand_cnt = (q == missing_src_q) ? 0 : 1;
+        wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q),
+                                       Op(Op::Type::EQ),
+                                       new Constant(demand_cnt)),
+                              time_range_t(0, 0),
+                              total_time));
+        wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q),
+                                       Op(Op::Type::EQ),
+                                       new Constant(demand_cnt)),
+                              time_range_t(total_time - 1, total_time - 1),
+                              total_time));
+        if (q != missing_src_q) {
+            wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DST, q),
+                                           Op(Op::Type::EQ),
+                                           new Constant(fixed_dst[q])),
+                                  time_range_t(0, 0),
+                                  total_time));
+        }
+        wl.add_spec(TimedSpec(new Same(metric_t::DST, q), time_range_t(0, total_time - 1), total_time));
+    }
+
+    return wl;
+}
+
+static Workload make_three_switch_cbd_t0_single_packet_workload_with_overridden_dst(
+    CBDSharedBufferCP& cp,
+    unsigned int total_time,
+    unsigned int src_q,
+    int new_dst) {
+    if (src_q >= cp.in_queue_cnt()) {
+        throw runtime_error("CBD workload helper src_q out of range");
+    }
+
+    Workload wl(17, cp.in_queue_cnt(), total_time);
+    vector<int> fixed_dst = {0, 2, 1};
+    fixed_dst[src_q] = new_dst;
+
+    for (unsigned int q = 0; q < cp.in_queue_cnt(); q++) {
+        wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q), Op(Op::Type::EQ), new Constant(1)),
+                              time_range_t(0, 0),
+                              total_time));
+        wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q), Op(Op::Type::EQ), new Constant(1)),
+                              time_range_t(total_time - 1, total_time - 1),
+                              total_time));
+        wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DST, q),
+                                       Op(Op::Type::EQ),
+                                       new Constant(fixed_dst[q])),
+                              time_range_t(0, 0),
+                              total_time));
+        wl.add_spec(TimedSpec(new Same(metric_t::DST, q), time_range_t(0, total_time - 1), total_time));
+    }
+
+    return wl;
+}
+
 static solver_res_t run_cbd_deadlock_query(unsigned int total_time,
                                            const SharedBufferEnvInfo& env_info,
                                            const SharedBufferSwitchInfo& switch_info,
@@ -282,16 +349,21 @@ static SharedBufferEnvInfo make_three_switch_cbd_env_info() {
     return env_info;
 }
 
-static SharedBufferSwitchInfo make_three_switch_cbd_switch_info() {
+static SharedBufferSwitchInfo make_three_switch_cbd_switch_info(unsigned int buffer_slot_cnt = 2,
+                                                                unsigned int ingress_pool_size = 2,
+                                                                unsigned int headroom_pool_size = 2,
+                                                                unsigned int egress_lossless_pool_size = 2,
+                                                                unsigned int ring_egress_ser = 2,
+                                                                unsigned int boundary_egress_ser = 1) {
     SharedBufferSwitchInfo switch_info;
     switch_info.ingress_queue_cnt = 2; // q0 internal ring ingress, q1 boundary ingress
     switch_info.egress_queue_cnt = 2;  // e0 internal ring egress, e1 boundary egress
-    switch_info.buffer_slot_cnt = 2;
-    switch_info.ingress_pool_size = 2;
-    switch_info.headroom_pool_size = 2;
-    switch_info.egress_lossless_pool_size = 2;
+    switch_info.buffer_slot_cnt = buffer_slot_cnt;
+    switch_info.ingress_pool_size = ingress_pool_size;
+    switch_info.headroom_pool_size = headroom_pool_size;
+    switch_info.egress_lossless_pool_size = egress_lossless_pool_size;
     switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
-    switch_info.egress_ser_factor = {2, 1};
+    switch_info.egress_ser_factor = {ring_egress_ser, boundary_egress_ser};
     return switch_info;
 }
 
@@ -469,6 +541,162 @@ static bool test_cbd_shared_buffer_three_switch_single_packet_persistent_deadloc
         query_t1,
         query_t2);
     cout << "[cbd_shared_buffer_three_switch_single_packet_persistent_deadlock_sat] result: " << res
+         << endl;
+    return res == solver_res_t::SAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_missing_s1_flow_no_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info = make_three_switch_cbd_switch_info();
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload_without_source(cp, total_time, 0),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_missing_s1_flow_no_deadlock] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_missing_s2_flow_no_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info = make_three_switch_cbd_switch_info();
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload_without_source(cp, total_time, 1),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_missing_s2_flow_no_deadlock] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_missing_s3_flow_no_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info = make_three_switch_cbd_switch_info();
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload_without_source(cp, total_time, 2),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_missing_s3_flow_no_deadlock] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_override_s1_dst_no_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info = make_three_switch_cbd_switch_info();
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload_with_overridden_dst(cp, total_time, 0, 1),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_override_s1_dst_no_deadlock] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_override_s2_dst_no_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info = make_three_switch_cbd_switch_info();
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload_with_overridden_dst(cp, total_time, 1, 0),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_override_s2_dst_no_deadlock] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_override_s3_dst_no_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info = make_three_switch_cbd_switch_info();
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload_with_overridden_dst(cp, total_time, 2, 2),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_override_s3_dst_no_deadlock] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_larger_ingress_pool_no_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info =
+        make_three_switch_cbd_switch_info(2, 3, 2, 2, 2, 1);
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload(cp, total_time),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_larger_ingress_pool_no_deadlock] result: " << res
+         << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_cbd_shared_buffer_three_switch_larger_buffer_still_deadlock() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info = make_three_switch_cbd_env_info();
+    SharedBufferSwitchInfo switch_info =
+        make_three_switch_cbd_switch_info(3, 2, 2, 2, 2, 1);
+
+    CBDSharedBufferCP cp = make_three_switch_cbd_cp(total_time, env_info, switch_info);
+    solver_res_t res = run_cbd_deadlock_query(
+        total_time,
+        env_info,
+        switch_info,
+        make_three_switch_cbd_t0_single_packet_workload(cp, total_time),
+        query_quant_t::EXISTS,
+        0,
+        total_time - 1);
+    cout << "[cbd_shared_buffer_three_switch_larger_buffer_still_deadlock] result: " << res
          << endl;
     return res == solver_res_t::SAT;
 }
@@ -1269,4 +1497,20 @@ void MultiSharedBufferTest::add_to_runner(TestRunner* runner) {
                           test_cbd_shared_buffer_three_switch_single_packet_deadlock_sat);
     runner->add_test_case("cbd_shared_buffer_three_switch_single_packet_persistent_deadlock_sat",
                           test_cbd_shared_buffer_three_switch_single_packet_persistent_deadlock_sat);
+    runner->add_test_case("cbd_shared_buffer_three_switch_missing_s1_flow_no_deadlock",
+                          test_cbd_shared_buffer_three_switch_missing_s1_flow_no_deadlock);
+    runner->add_test_case("cbd_shared_buffer_three_switch_missing_s2_flow_no_deadlock",
+                          test_cbd_shared_buffer_three_switch_missing_s2_flow_no_deadlock);
+    runner->add_test_case("cbd_shared_buffer_three_switch_missing_s3_flow_no_deadlock",
+                          test_cbd_shared_buffer_three_switch_missing_s3_flow_no_deadlock);
+    runner->add_test_case("cbd_shared_buffer_three_switch_override_s1_dst_no_deadlock",
+                          test_cbd_shared_buffer_three_switch_override_s1_dst_no_deadlock);
+    runner->add_test_case("cbd_shared_buffer_three_switch_override_s2_dst_no_deadlock",
+                          test_cbd_shared_buffer_three_switch_override_s2_dst_no_deadlock);
+    runner->add_test_case("cbd_shared_buffer_three_switch_override_s3_dst_no_deadlock",
+                          test_cbd_shared_buffer_three_switch_override_s3_dst_no_deadlock);
+    runner->add_test_case("cbd_shared_buffer_three_switch_larger_ingress_pool_no_deadlock",
+                          test_cbd_shared_buffer_three_switch_larger_ingress_pool_no_deadlock);
+    runner->add_test_case("cbd_shared_buffer_three_switch_larger_buffer_still_deadlock",
+                          test_cbd_shared_buffer_three_switch_larger_buffer_still_deadlock);
 }
