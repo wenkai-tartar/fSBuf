@@ -15,6 +15,30 @@ ContentionPoint(total_time),
 env_info(info) {
 }
 
+solver_res_t SharedBufferPoint::satisfy_query_with_model(string& model_str) {
+    model_str.clear();
+
+    if (!query_is_set) {
+        cout << "SharedBufferPoint::satisfy_query_with_model: Query is not set." << endl;
+        return solver_res_t::UNKNOWN;
+    }
+
+    z3_solver->push();
+    z3_solver->add(base_wl_expr, "base_wl");
+    z3_solver->add(query_expr, "query");
+
+    check_result z3_res = z3_solver->check();
+    solver_res_t res = get_solver_res_t(z3_res);
+    if (z3_res == sat) {
+        model m = z3_solver->get_model();
+        model_str = get_model_str(m);
+    }
+
+    z3_solver->pop();
+
+    return res;
+}
+
 void SharedBufferPoint::add_in_queue_constrs() {
     ContentionPoint::add_in_queue_constrs();
 

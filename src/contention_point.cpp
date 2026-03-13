@@ -16,9 +16,9 @@ unsigned int TIMESTEP_RANGE_MAX;
 
 ContentionPoint::ContentionPoint(unsigned int total_time):
 total_time(total_time),
-base_wl(Workload(0, 0, total_time)),
 base_wl_expr(expr(net_ctx.z3_ctx())),
-query_expr(expr(net_ctx.z3_ctx())) {
+query_expr(expr(net_ctx.z3_ctx())),
+base_wl(Workload(0, 0, total_time)) {
 }
 
 // NOTE: the constructor of inherited classes

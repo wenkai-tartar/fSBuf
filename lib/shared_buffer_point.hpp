@@ -22,6 +22,7 @@ struct SharedBufferEnvInfo {
 class SharedBufferPoint : public ContentionPoint {
 public:
     SharedBufferPoint(unsigned int total_time, SharedBufferEnvInfo info);
+    solver_res_t satisfy_query_with_model(string& model_str);
 
 protected:
     void add_in_queue_constrs() override;

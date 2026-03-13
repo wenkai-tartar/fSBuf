@@ -98,6 +98,9 @@ protected:
     vector<Queue*> in_queues;
     vector<Queue*> out_queues;
     map<metric_t, map<cid_t, Metric*>> metrics;
+    expr base_wl_expr;
+    expr query_expr;
+    bool query_is_set = false;
 
     void init();
 
@@ -106,16 +109,15 @@ protected:
 
     virtual m_val_expr_t metric_val_expr(metric_t metric, unsigned int q, unsigned int t);
 
+    string get_model_str(model& m);
+    solver_res_t get_solver_res_t(check_result z3_res);
+
     void add_constr(expr const& e, char const* p);
     void add_constr_from_map(map<string, expr> constr_map);
 
 private:
     Workload base_wl;
-    expr base_wl_expr;
-
     Query query;
-    expr query_expr;
-    bool query_is_set = false;
 
     Dists* dists = NULL;
     SharedConfig* shared_config = NULL;
@@ -135,13 +137,10 @@ private:
     void add_node_constrs();
     void add_metric_constrs();
 
-    string get_model_str(model& m);
     virtual string cp_model_str(model& m, NetContext& net_ctx, unsigned int t) = 0;
     void populate_example_from_model(model& m, IndexedExample* eg);
 
     expr get_random_eg_mod(IndexedExample* eg, unsigned int mod_cnt, qset_t queue_set);
-    solver_res_t get_solver_res_t(check_result z3_res);
-
 
     // generate expressions from workloads and queries
     expr get_expr(Query& query);
