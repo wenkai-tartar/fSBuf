@@ -676,7 +676,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
 
                 expr pkt = inq->enqs(0)[t];
                 expr has_enq = net_ctx.pkt2val(pkt);
-                expr dst_eg = route_policy_->routed_egress(id, q, t, pkt, eg_cnt, net_ctx);
+                expr dst_eg = route_policy_->routed_egress(id, pkt, eg_cnt, net_ctx);
                 expr has_ing_credit = ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt;
                 expr has_hdr_credit = headroom_pool_occ_[q][t][k] < (int) headroom_pool_cap_cnt;
                 expr has_eg_credit = egress_lossless_pool_total_occ_[t][k] <
@@ -1504,7 +1504,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                 for (unsigned int q = 0; q < in_cnt; q++) {
                     Queue* inq = in_queues[q];
                     expr pkt = inq->enqs(0)[t];
-                    expr dst_eg = route_policy_->routed_egress(id, q, t, pkt, eg_cnt, net_ctx);
+                    expr dst_eg = route_policy_->routed_egress(id, pkt, eg_cnt, net_ctx);
 
                     snprintf(constr_name,
                              sizeof(constr_name),

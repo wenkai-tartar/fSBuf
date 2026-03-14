@@ -1,4 +1,5 @@
 #include "multi_shared_buffer_test.hpp"
+#include "pfc_deadlock_test.hpp"
 #include "rr_scheduler_test.hpp"
 #include "search_test.hpp"
 #include "shared_buffer_test.hpp"
@@ -29,6 +30,9 @@ int main(int argc, char** argv) {
 
     MultiSharedBufferTest multiSharedBufferTest;
     multiSharedBufferTest.add_to_runner(&runner);
+
+    PFCDeadlockTest pfcDeadlockTest;
+    pfcDeadlockTest.add_to_runner(&runner);
 
     bool result = runner.run(arguments);
 

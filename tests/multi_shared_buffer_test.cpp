@@ -49,13 +49,13 @@ static MultiSharedBufferCP make_two_switch_chain_cp(unsigned int total_time,
     MultiSharedBufferSwitchConfig s1_cfg;
     s1_cfg.switch_id = "S1";
     s1_cfg.switch_info = s1_info;
-    s1_cfg.route_policy = make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{0}});
+    s1_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0});
     switch_configs.push_back(std::move(s1_cfg));
 
     MultiSharedBufferSwitchConfig s2_cfg;
     s2_cfg.switch_id = "S2";
     s2_cfg.switch_info = s2_info;
-    s2_cfg.route_policy = make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{0}});
+    s2_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0});
     switch_configs.push_back(std::move(s2_cfg));
 
     vector<MultiSharedBufferEdge> internal_edges = {
@@ -95,13 +95,13 @@ static MultiSharedBufferCP make_two_switch_two_source_chain_cp(
     MultiSharedBufferSwitchConfig s1_cfg;
     s1_cfg.switch_id = "S1";
     s1_cfg.switch_info = s1_info;
-    s1_cfg.route_policy = make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{0}, {0}});
+    s1_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0});
     switch_configs.push_back(std::move(s1_cfg));
 
     MultiSharedBufferSwitchConfig s2_cfg;
     s2_cfg.switch_id = "S2";
     s2_cfg.switch_info = s2_info;
-    s2_cfg.route_policy = make_unique<TableRoutePolicy>(vector<vector<unsigned int>>{{0}});
+    s2_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0});
     switch_configs.push_back(std::move(s2_cfg));
 
     vector<MultiSharedBufferEdge> internal_edges = {

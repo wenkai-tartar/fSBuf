@@ -371,56 +371,6 @@ bool test_shared_buffer_modulo_meta1_route_policy() {
     return fast_res == solver_res_t::SAT && miss_res == solver_res_t::UNSAT;
 }
 
-bool test_shared_buffer_fixed_ingress_route_policy() {
-    const unsigned int total_time = 5;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    SharedBufferSwitchInfo switch_info;
-    switch_info.ingress_queue_cnt = 1;
-    switch_info.egress_queue_cnt = 2;
-    switch_info.buffer_slot_cnt = 8;
-    switch_info.ingress_pool_size = 8;
-    switch_info.headroom_pool_size = 8;
-    switch_info.egress_lossless_pool_size = 8;
-    switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
-
-    vector<int> demand_lb = {5};
-    vector<int> dst_eq = {-1};
-
-    cout << "[shared_buffer_fixed_ingress_route_policy] ingress 0 fixed to e1, out1.cenq(T)>=4"
-         << endl;
-    solver_res_t fast_res = run_output_cenq_query(total_time,
-                                                  env_info,
-                                                  switch_info,
-                                                  demand_lb,
-                                                  dst_eq,
-                                                  1,
-                                                  4,
-                                                  make_unique<FixedIngressRoutePolicy>(
-                                                      vector<unsigned int>{1}));
-
-    cout << "[shared_buffer_fixed_ingress_route_policy] ingress 0 fixed away from e0, "
-            "out0.cenq(T)>=1"
-         << endl;
-    solver_res_t miss_res = run_output_cenq_query(total_time,
-                                                  env_info,
-                                                  switch_info,
-                                                  demand_lb,
-                                                  dst_eq,
-                                                  0,
-                                                  1,
-                                                  make_unique<FixedIngressRoutePolicy>(
-                                                      vector<unsigned int>{1}));
-
-    cout << "fast-egress-bound: " << fast_res << endl;
-    cout << "wrong-egress-bound: " << miss_res << endl;
-
-    return fast_res == solver_res_t::SAT && miss_res == solver_res_t::UNSAT;
-}
-
 bool test_shared_buffer_table_route_policy() {
     const unsigned int total_time = 5;
 
@@ -439,7 +389,7 @@ bool test_shared_buffer_table_route_policy() {
 
     vector<int> demand_lb = {5};
 
-    cout << "[shared_buffer_table_route_policy] table[0][0]=1, out1.cenq(T)>=4" << endl;
+    cout << "[shared_buffer_table_route_policy] table[0]=1, out1.cenq(T)>=4" << endl;
     solver_res_t fast_res = run_output_cenq_query(total_time,
                                                   env_info,
                                                   switch_info,
@@ -447,9 +397,8 @@ bool test_shared_buffer_table_route_policy() {
                                                   vector<int>{0},
                                                   1,
                                                   4,
-                                                  make_unique<TableRoutePolicy>(
-                                                      vector<vector<unsigned int>>{{1, 0}}));
-    cout << "[shared_buffer_table_route_policy] table[0][1]=0, out1.cenq(T)>=1" << endl;
+                                                  make_unique<TableRoutePolicy>(vector<unsigned int>{1, 0}));
+    cout << "[shared_buffer_table_route_policy] table[1]=0, out1.cenq(T)>=1" << endl;
     solver_res_t miss_res = run_output_cenq_query(total_time,
                                                   env_info,
                                                   switch_info,
@@ -457,8 +406,7 @@ bool test_shared_buffer_table_route_policy() {
                                                   vector<int>{1},
                                                   1,
                                                   1,
-                                                  make_unique<TableRoutePolicy>(
-                                                      vector<vector<unsigned int>>{{1, 0}}));
+                                                  make_unique<TableRoutePolicy>(vector<unsigned int>{1, 0}));
 
     cout << "fast-egress-bound: " << fast_res << endl;
     cout << "wrong-egress-bound: " << miss_res << endl;
@@ -483,11 +431,11 @@ bool test_shared_buffer_ingress_service_gap_control() {
     switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
 
     vector<int> demand_lb = {5, 5};
-    vector<int> dst_eq = {-1, -1};
+    vector<int> dst_eq = {0, 1};
     const unsigned int t1 = 1;
     const unsigned int t2 = 4;
 
-    cout << "[shared_buffer_ingress_service_gap_control] q0-q1 cenq gap stays <= 0 on [1,4]"
+    cout << "[shared_buffer_ingress_service_gap_control] q0(dst=0)-q1(dst=1) cenq gap stays <= 0 on [1,4]"
          << endl;
     solver_res_t q0_le_q1 = run_ingress_cenq_diff_query(total_time,
                                                         env_info,
@@ -500,10 +448,10 @@ bool test_shared_buffer_ingress_service_gap_control() {
                                                         t2,
                                                         Op(Op::Type::LE),
                                                         0,
-                                                        make_unique<FixedIngressRoutePolicy>(
+                                                        make_unique<TableRoutePolicy>(
                                                             vector<unsigned int>{0, 1}));
 
-    cout << "[shared_buffer_ingress_service_gap_control] q1-q0 cenq gap stays <= 0 on [1,4]"
+    cout << "[shared_buffer_ingress_service_gap_control] q1(dst=1)-q0(dst=0) cenq gap stays <= 0 on [1,4]"
          << endl;
     solver_res_t q1_le_q0 = run_ingress_cenq_diff_query(total_time,
                                                         env_info,
@@ -516,7 +464,7 @@ bool test_shared_buffer_ingress_service_gap_control() {
                                                         t2,
                                                         Op(Op::Type::LE),
                                                         0,
-                                                        make_unique<FixedIngressRoutePolicy>(
+                                                        make_unique<TableRoutePolicy>(
                                                             vector<unsigned int>{0, 1}));
 
     cout << "q0_minus_q1_le_0: " << q0_le_q1 << endl;
@@ -536,8 +484,6 @@ void SharedBufferTest::add_to_runner(TestRunner* runner) {
                           test_shared_buffer_pause_resume_recovery);
     runner->add_test_case("shared_buffer_modulo_meta1_route_policy",
                           test_shared_buffer_modulo_meta1_route_policy);
-    runner->add_test_case("shared_buffer_fixed_ingress_route_policy",
-                          test_shared_buffer_fixed_ingress_route_policy);
     runner->add_test_case("shared_buffer_table_route_policy",
                           test_shared_buffer_table_route_policy);
     runner->add_test_case("shared_buffer_ingress_service_gap_control",

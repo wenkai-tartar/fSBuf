@@ -33,8 +33,6 @@ public:
                              map<string, expr>& constr_map);
 
     virtual expr routed_egress(cid_t qm_id,
-                               unsigned int ingress,
-                               unsigned int t,
                                expr pkt,
                                unsigned int egress_count,
                                NetContext& net_ctx) const = 0;
@@ -43,38 +41,14 @@ public:
 class ModuloMeta1RoutePolicy : public SharedBufferRoutePolicy {
 public:
     expr routed_egress(cid_t qm_id,
-                       unsigned int ingress,
-                       unsigned int t,
                        expr pkt,
                        unsigned int egress_count,
                        NetContext& net_ctx) const override;
-};
-
-class FixedIngressRoutePolicy : public SharedBufferRoutePolicy {
-public:
-    explicit FixedIngressRoutePolicy(vector<unsigned int> ingress_to_egress);
-
-    void add_constrs(cid_t qm_id,
-                     unsigned int total_time,
-                     const vector<Queue*>& in_queues,
-                     unsigned int egress_count,
-                     NetContext& net_ctx,
-                     map<string, expr>& constr_map) override;
-
-    expr routed_egress(cid_t qm_id,
-                       unsigned int ingress,
-                       unsigned int t,
-                       expr pkt,
-                       unsigned int egress_count,
-                       NetContext& net_ctx) const override;
-
-private:
-    vector<unsigned int> ingress_to_egress_;
 };
 
 class TableRoutePolicy : public SharedBufferRoutePolicy {
 public:
-    explicit TableRoutePolicy(vector<vector<unsigned int>> route_table);
+    explicit TableRoutePolicy(vector<unsigned int> route_table);
 
     void add_constrs(cid_t qm_id,
                      unsigned int total_time,
@@ -84,14 +58,12 @@ public:
                      map<string, expr>& constr_map) override;
 
     expr routed_egress(cid_t qm_id,
-                       unsigned int ingress,
-                       unsigned int t,
                        expr pkt,
                        unsigned int egress_count,
                        NetContext& net_ctx) const override;
 
 private:
-    vector<vector<unsigned int>> route_table_;
+    vector<unsigned int> route_table_;
 };
 
 #endif /* shared_buffer_route_policy_hpp */
