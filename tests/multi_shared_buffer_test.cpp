@@ -683,14 +683,27 @@ static bool test_two_switch_chain_burst_pause_then_resume() {
     cfg.s2_egress_pool = 2;
     cfg.s2_egress_ser = 2;
 
+    MultiSharedBufferCP clear_cp = make_two_switch_chain_cp(total_time, env_info, cfg);
+    clear_cp.set_base_workload(make_two_switch_chain_four_packet_burst_workload(clear_cp, total_time));
+    cid_t clear_src_qid = clear_cp.get_in_queues()[0]->get_id();
+    Query clear_query(query_quant_t::FORALL,
+                      time_range_t(0, 1),
+                      clear_src_qid,
+                      metric_t::SENDER_PAUSED,
+                      Op(Op::Type::EQ),
+                      0);
+    clear_cp.set_query(clear_query);
+    solver_res_t clear_res = clear_cp.satisfy_query();
+    cout << "[two_switch_chain_burst_pause_then_resume] clear result: " << clear_res << endl;
+
     MultiSharedBufferCP paused_cp = make_two_switch_chain_cp(total_time, env_info, cfg);
     paused_cp.set_base_workload(make_two_switch_chain_four_packet_burst_workload(paused_cp, total_time));
     cid_t paused_src_qid = paused_cp.get_in_queues()[0]->get_id();
     Query paused_query(query_quant_t::EXISTS,
-                       time_range_t(0, 6),
+                       time_range_t(2, 3),
                        paused_src_qid,
                        metric_t::SENDER_PAUSED,
-                       Op(Op::Type::GE),
+                       Op(Op::Type::EQ),
                        1);
     paused_cp.set_query(paused_query);
     solver_res_t paused_res = paused_cp.satisfy_query();
@@ -700,7 +713,7 @@ static bool test_two_switch_chain_burst_pause_then_resume() {
     resumed_cp.set_base_workload(make_two_switch_chain_four_packet_burst_workload(resumed_cp, total_time));
     cid_t resumed_src_qid = resumed_cp.get_in_queues()[0]->get_id();
     Query resumed_query(query_quant_t::FORALL,
-                        time_range_t(7, total_time - 1),
+                        time_range_t(4, total_time - 1),
                         resumed_src_qid,
                         metric_t::SENDER_PAUSED,
                         Op(Op::Type::EQ),
@@ -709,7 +722,8 @@ static bool test_two_switch_chain_burst_pause_then_resume() {
     solver_res_t resumed_res = resumed_cp.satisfy_query();
     cout << "[two_switch_chain_burst_pause_then_resume] resumed result: " << resumed_res << endl;
 
-    return paused_res == solver_res_t::SAT && resumed_res == solver_res_t::SAT;
+    return clear_res == solver_res_t::SAT && paused_res == solver_res_t::SAT &&
+           resumed_res == solver_res_t::SAT;
 }
 
 static bool test_two_switch_two_source_enqueue_at_t0_sat() {

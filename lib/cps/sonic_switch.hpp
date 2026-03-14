@@ -13,6 +13,7 @@
 #include "cenq.hpp"
 #include "demand.hpp"
 #include "dst.hpp"
+#include "sender_paused.hpp"
 #include "shared_buffer_point.hpp"
 #include "shared_buffer_route_policy.hpp"
 #include "shared_buffer_switch_qm.hpp"
@@ -34,6 +35,7 @@ private:
     vector<CEnq*> out_cenq_;
     vector<Demand*> demand_;
     vector<Dst*> dst_;
+    vector<SenderPaused*> sender_paused_;
 
     void add_nodes() override;
     void add_edges() override;

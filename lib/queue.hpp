@@ -128,7 +128,8 @@ public:
  * Packet storage lives inside SharedBufferSwitchQM. The queue keeps:
  *   - enqs -> enq_cnt interface visibility
  *   - inert elem state for legacy compatibility
- *   - coarse-step pause/resume and delayed sender-visible control state
+ *   - coarse-step pause/resume, receiver-visible control arrivals, and delayed sender-visible
+ *     apply state
  *
  * TODO(shared-buffer-semantics): Introduce a SharedBufferSemanticPolicy and make SBQueue a
  * thinner interface object. The queue API should continue to expose enqueue-visible arrivals and

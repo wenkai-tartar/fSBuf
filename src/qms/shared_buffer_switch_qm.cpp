@@ -1767,7 +1767,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
         }
     }
 
-    // FAST_STEADY egress PFC-blocked predicate.
+    // Coarse-step egress PFC-blocked predicate.
     for (unsigned int t = 0; t < total_time; t++) {
         for (unsigned int e = 0; e < eg_cnt; e++) {
             const SBQueue* outq = egress_sb_queue(e);

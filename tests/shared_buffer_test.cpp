@@ -17,6 +17,62 @@ static void add_fixed_dst_specs(Workload& wl, unsigned int queue, unsigned int t
     wl.add_spec(TimedSpec(new Same(metric_t::DST, queue), time_range_t(0, total_time - 1), total_time));
 }
 
+static vector<int> make_four_packet_burst_demand_trace(unsigned int total_time) {
+    vector<int> demand_trace(total_time, -1);
+    if (total_time > 0) {
+        demand_trace[0] = 1;
+    }
+    if (total_time > 1) {
+        demand_trace[1] = 2;
+    }
+    if (total_time > 2) {
+        demand_trace[2] = 3;
+    }
+    if (total_time > 3) {
+        demand_trace[3] = 4;
+        demand_trace[total_time - 1] = 4;
+    }
+    return demand_trace;
+}
+
+static solver_res_t
+run_single_ingress_sender_paused_query(unsigned int total_time,
+                                       const SharedBufferEnvInfo& env_info,
+                                       const SharedBufferSwitchInfo& switch_info,
+                                       const vector<int>& demand_trace,
+                                       query_quant_t quant,
+                                       time_range_t query_time,
+                                       int paused_eq,
+                                       unique_ptr<SharedBufferRoutePolicy> route_policy = nullptr,
+                                       int dst_eq = -1) {
+    SONiCSwitch sw(total_time, env_info, switch_info, std::move(route_policy));
+
+    Workload wl(16, sw.in_queue_cnt(), total_time);
+    for (unsigned int t = 0; t < total_time && t < demand_trace.size(); t++) {
+        if (demand_trace[t] >= 0) {
+            wl.add_spec(TimedSpec(
+                new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(demand_trace[t])),
+                time_range_t(t, t),
+                total_time));
+        }
+    }
+    if (dst_eq >= 0) {
+        add_fixed_dst_specs(wl, 0, total_time, dst_eq);
+    }
+    sw.set_base_workload(wl);
+
+    cid_t queue_id = sw.get_in_queues()[0]->get_id();
+    Query query(quant,
+                query_time,
+                queue_id,
+                metric_t::SENDER_PAUSED,
+                Op(Op::Type::EQ),
+                paused_eq);
+    sw.set_query(query);
+
+    return sw.satisfy_query();
+}
+
 static solver_res_t
 run_single_ingress_cenq_query(unsigned int total_time,
                               const SharedBufferEnvInfo& env_info,
@@ -40,39 +96,6 @@ run_single_ingress_cenq_query(unsigned int total_time,
     cid_t queue_id = sw.get_in_queues()[0]->get_id();
     Query query(query_quant_t::EXISTS,
                 time_range_t(total_time - 1, total_time - 1),
-                queue_id,
-                metric_t::CENQ,
-                Op(Op::Type::GE),
-                cenq_lb);
-    sw.set_query(query);
-
-    return sw.satisfy_query();
-}
-
-static solver_res_t
-run_single_ingress_cenq_query_at_time(unsigned int total_time,
-                                      const SharedBufferEnvInfo& env_info,
-                                      const SharedBufferSwitchInfo& switch_info,
-                                      int demand_lb,
-                                      unsigned int query_time,
-                                      int cenq_lb,
-                                      unique_ptr<SharedBufferRoutePolicy> route_policy = nullptr,
-                                      int dst_eq = -1) {
-    SONiCSwitch sw(total_time, env_info, switch_info, std::move(route_policy));
-
-    Workload wl(10, sw.in_queue_cnt(), total_time);
-    wl.add_spec(TimedSpec(
-        new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::GE), new Constant(demand_lb)),
-        time_range_t(total_time - 1, total_time - 1),
-        total_time));
-    if (dst_eq >= 0) {
-        add_fixed_dst_specs(wl, 0, total_time, dst_eq);
-    }
-    sw.set_base_workload(wl);
-
-    cid_t queue_id = sw.get_in_queues()[0]->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(query_time, query_time),
                 queue_id,
                 metric_t::CENQ,
                 Op(Op::Type::GE),
@@ -249,10 +272,10 @@ bool test_shared_buffer_egress_backpressure() {
     switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
     switch_info.egress_ser_factor = {2};
 
-    cout << "[shared_buffer_egress_backpressure] SAT case: demand(T)>=5, cenq(T)>=3" << endl;
-    solver_res_t sat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 3);
-    cout << "[shared_buffer_egress_backpressure] UNSAT case: demand(T)>=5, cenq(T)>=4" << endl;
-    solver_res_t unsat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 4);
+    cout << "[shared_buffer_egress_backpressure] SAT case: demand(T)>=5, cenq(T)>=2" << endl;
+    solver_res_t sat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 2);
+    cout << "[shared_buffer_egress_backpressure] UNSAT case: demand(T)>=5, cenq(T)>=3" << endl;
+    solver_res_t unsat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 3);
 
     cout << "sat-bound: " << sat_res << endl;
     cout << "unsat-bound: " << unsat_res << endl;
@@ -261,7 +284,7 @@ bool test_shared_buffer_egress_backpressure() {
 }
 
 bool test_shared_buffer_pause_resume_recovery() {
-    const unsigned int total_time = 5;
+    const unsigned int total_time = 6;
 
     SharedBufferEnvInfo env_info;
     env_info.max_demand_per_t = 1;
@@ -277,18 +300,31 @@ bool test_shared_buffer_pause_resume_recovery() {
     switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
     switch_info.egress_ser_factor = {2};
 
-    cout << "[shared_buffer_pause_resume_recovery] early case: demand(T)>=5, cenq(t=3)>=3" << endl;
-    solver_res_t early_res = run_single_ingress_cenq_query_at_time(
-        total_time, env_info, switch_info, 5, 3, 3);
+    vector<int> demand_trace = make_four_packet_burst_demand_trace(total_time);
 
-    cout << "[shared_buffer_pause_resume_recovery] late case: demand(T)>=5, cenq(t=4)>=3" << endl;
-    solver_res_t late_res = run_single_ingress_cenq_query_at_time(
-        total_time, env_info, switch_info, 5, 4, 3);
+    cout << "[shared_buffer_pause_resume_recovery] no early pause on t=[0,1]" << endl;
+    solver_res_t clear_res = run_single_ingress_sender_paused_query(
+        total_time, env_info, switch_info, demand_trace, query_quant_t::FORALL, time_range_t(0, 1), 0);
 
-    cout << "early-bound: " << early_res << endl;
-    cout << "late-bound: " << late_res << endl;
+    cout << "[shared_buffer_pause_resume_recovery] pause applied on t=[2,4]" << endl;
+    solver_res_t paused_res = run_single_ingress_sender_paused_query(
+        total_time, env_info, switch_info, demand_trace, query_quant_t::EXISTS, time_range_t(2, 4), 1);
 
-    return early_res == solver_res_t::UNSAT && late_res == solver_res_t::SAT;
+    cout << "[shared_buffer_pause_resume_recovery] resumed by t=5" << endl;
+    solver_res_t resumed_res = run_single_ingress_sender_paused_query(total_time,
+                                                                      env_info,
+                                                                      switch_info,
+                                                                      demand_trace,
+                                                                      query_quant_t::FORALL,
+                                                                      time_range_t(5, total_time - 1),
+                                                                      0);
+
+    cout << "clear-bound: " << clear_res << endl;
+    cout << "paused-bound: " << paused_res << endl;
+    cout << "resumed-bound: " << resumed_res << endl;
+
+    return clear_res == solver_res_t::SAT && paused_res == solver_res_t::SAT &&
+           resumed_res == solver_res_t::SAT;
 }
 
 bool test_shared_buffer_modulo_meta1_route_policy() {

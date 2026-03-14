@@ -658,7 +658,8 @@ void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
         constr_map.insert(named_constr(constr_name, !(pause_tx_[t] && resume_tx_[t])));
 
         if (t == 0) {
-            // No delayed control packet has arrived before the first slot.
+            // No delayed control packet has arrived before the first slot, so nothing has been
+            // observed or applied by the sender yet.
             snprintf(constr_name, sizeof(constr_name), "%s_pause_rx_init", id.c_str());
             constr_map.insert(named_constr(constr_name, !pause_rx_[0]));
             snprintf(constr_name, sizeof(constr_name), "%s_resume_rx_init", id.c_str());
@@ -666,8 +667,7 @@ void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
             snprintf(constr_name, sizeof(constr_name), "%s_sender_paused_init", id.c_str());
             constr_map.insert(named_constr(constr_name, !sender_paused_[0]));
         } else {
-            // TODO(shared-buffer-semantics): This hard-coded 1-slot control propagation is the
-            // current FAST_STEADY approximation. Move pause_rx/resume_rx/sender_paused evolution
+            // TODO(shared-buffer-semantics): Move pause_rx/resume_rx/sender_paused evolution
             // behind SharedBufferSemanticPolicy so PRECISE_PFC can model launch-vs-arrival timing
             // and in-flight traffic without forking SharedBufferSwitchQM's common core logic.
             // Coarse-step control propagation: pause/resume sent at t-1 is observed at t.
@@ -676,12 +676,19 @@ void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
             snprintf(constr_name, sizeof(constr_name), "%s_resume_rx_delay_%u", id.c_str(), t);
             constr_map.insert(named_constr(constr_name, resume_rx_[t] == resume_tx_[t - 1]));
 
-            // The upstream sender obeys the delayed pause/resume state.
-            snprintf(constr_name, sizeof(constr_name), "%s_sender_paused_step_%u", id.c_str(), t);
-            constr_map.insert(
-                named_constr(constr_name,
-                             sender_paused_[t] ==
-                                 ((sender_paused_[t - 1] || pause_rx_[t]) && !resume_rx_[t])));
+            if (t == 1) {
+                // A newly observed control packet is only applied starting in the following slot.
+                snprintf(constr_name, sizeof(constr_name), "%s_sender_paused_apply_delay_%u", id.c_str(), t);
+                constr_map.insert(named_constr(constr_name, sender_paused_[t] == sender_paused_[t - 1]));
+            } else {
+                // The sender applies pause/resume one slot after observing the control packet.
+                snprintf(constr_name, sizeof(constr_name), "%s_sender_paused_step_%u", id.c_str(), t);
+                constr_map.insert(
+                    named_constr(constr_name,
+                                 sender_paused_[t] ==
+                                     ((sender_paused_[t - 1] || pause_rx_[t - 1]) &&
+                                      !resume_rx_[t - 1])));
+            }
         }
     }
 }
