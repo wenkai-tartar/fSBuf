@@ -29,11 +29,6 @@ struct RingFlowSpec {
     vector<pair<unsigned int, int>> demand_upper_bounds;
 };
 
-enum class DeadlockCheckKind {
-    ExistsDeadlock,
-    PersistentDeadlock,
-};
-
 enum class ScenarioExpectation {
     Infeasible,
     DeadlockSafe,
@@ -46,8 +41,7 @@ struct ThreeSwitchRingScenario {
     SharedBufferEnvInfo env_info;
     ThreeSwitchRingSwitchParams switch_params;
     std::array<RingFlowSpec, 3> flows;
-    DeadlockCheckKind check_kind = DeadlockCheckKind::ExistsDeadlock;
-    unsigned int query_t1 = 0;
+    unsigned int query_t1 = 3;
     unsigned int query_t2 = 7;
     ScenarioExpectation expected = ScenarioExpectation::DeadlockUnsafe;
 };
@@ -162,12 +156,7 @@ static Query make_deadlock_query(CBDSharedBufferCP& cp, const ThreeSwitchRingSce
         ring_node_qids.push_back(qm->get_in_queue(node.ingress)->get_id());
     }
 
-    query_quant_t quant = query_quant_t::EXISTS;
-    if (scenario.check_kind == DeadlockCheckKind::PersistentDeadlock) {
-        quant = query_quant_t::FORALL;
-    }
-
-    return Query(quant,
+    return Query(query_quant_t::FORALL,
                  time_range_t(scenario.query_t1, scenario.query_t2),
                  ring_node_qids,
                  metric_t::CBD_DEADLOCK_NODE,
@@ -234,23 +223,12 @@ static ThreeSwitchRingScenario make_base_deadlock_scenario(const string& name,
     scenario.env_info = make_ring_env_info();
     scenario.switch_params = {};
     scenario.flows = {
+        make_t0_single_packet_flow(1, scenario.total_time),
         make_t0_single_packet_flow(2, scenario.total_time),
         make_t0_single_packet_flow(0, scenario.total_time),
-        make_t0_single_packet_flow(1, scenario.total_time),
     };
-    scenario.check_kind = DeadlockCheckKind::ExistsDeadlock;
-    scenario.query_t1 = 0;
     scenario.query_t2 = scenario.total_time - 1;
     scenario.expected = expected;
-    return scenario;
-}
-
-static ThreeSwitchRingScenario make_persistent_deadlock_scenario() {
-    ThreeSwitchRingScenario scenario = make_base_deadlock_scenario(
-        "persistent_single_packet_deadlock", ScenarioExpectation::DeadlockUnsafe);
-    scenario.check_kind = DeadlockCheckKind::PersistentDeadlock;
-    scenario.query_t1 = 3;
-    scenario.query_t2 = scenario.total_time - 1;
     return scenario;
 }
 
@@ -265,8 +243,6 @@ static ThreeSwitchRingScenario make_free_dst_deadlock_scenario(const string& nam
         flow.demand_lower_bounds = {{0, 1}, {scenario.total_time - 1, 1}};
         flow.demand_upper_bounds = {{0, 1}, {scenario.total_time - 1, 1}};
     }
-    scenario.check_kind = DeadlockCheckKind::ExistsDeadlock;
-    scenario.query_t1 = 0;
     scenario.query_t2 = scenario.total_time - 1;
     scenario.expected = expected;
     return scenario;
@@ -275,10 +251,9 @@ static ThreeSwitchRingScenario make_free_dst_deadlock_scenario(const string& nam
 static bool test_pfc_deadlock_three_switch_ring_framework() {
     vector<ThreeSwitchRingScenario> scenarios;
 
-    scenarios.push_back(
-        make_base_deadlock_scenario("single_packet_deadlock", ScenarioExpectation::DeadlockUnsafe));
-    scenarios.push_back(make_persistent_deadlock_scenario());
-    scenarios.push_back(make_free_dst_deadlock_scenario("single_packet_deadlock_with_free_dst",
+    scenarios.push_back(make_base_deadlock_scenario("persistent_single_packet_deadlock",
+                                                    ScenarioExpectation::DeadlockUnsafe));
+    scenarios.push_back(make_free_dst_deadlock_scenario("persistent_single_packet_deadlock_with_free_dst",
                                                         ScenarioExpectation::DeadlockUnsafe));
 
     ThreeSwitchRingScenario missing_s1 = make_base_deadlock_scenario(
@@ -298,17 +273,17 @@ static bool test_pfc_deadlock_three_switch_ring_framework() {
 
     ThreeSwitchRingScenario override_s1 = make_base_deadlock_scenario(
         "override_s1_dst", ScenarioExpectation::DeadlockSafe);
-    override_s1.flows[0].fixed_dst = 1;
+    override_s1.flows[0].fixed_dst = 0;
     scenarios.push_back(override_s1);
 
     ThreeSwitchRingScenario override_s2 = make_base_deadlock_scenario(
         "override_s2_dst", ScenarioExpectation::DeadlockSafe);
-    override_s2.flows[1].fixed_dst = 2;
+    override_s2.flows[1].fixed_dst = 1;
     scenarios.push_back(override_s2);
 
     ThreeSwitchRingScenario override_s3 = make_base_deadlock_scenario(
         "override_s3_dst", ScenarioExpectation::DeadlockSafe);
-    override_s3.flows[2].fixed_dst = 0;
+    override_s3.flows[2].fixed_dst = 2;
     scenarios.push_back(override_s3);
 
     bool ok = true;
