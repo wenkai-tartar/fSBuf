@@ -99,9 +99,9 @@ static CBDSharedBufferCP make_three_switch_ring_cp(unsigned int total_time,
     switch_configs.push_back(std::move(s3_cfg));
 
     vector<CBDRingEdge> ring_edges = {
-        {"S1", 0, 0, "S3", 0, 0},
-        {"S3", 0, 0, "S2", 0, 0},
-        {"S2", 0, 0, "S1", 0, 0},
+        {"S1", 0, 0, "S2", 0, 0},
+        {"S2", 0, 0, "S3", 0, 0},
+        {"S3", 0, 0, "S1", 0, 0},
     };
 
     return CBDSharedBufferCP(total_time, env_info, std::move(switch_configs), ring_edges);
@@ -253,8 +253,9 @@ static bool test_pfc_deadlock_three_switch_ring_framework() {
 
     scenarios.push_back(make_base_deadlock_scenario("persistent_single_packet_deadlock",
                                                     ScenarioExpectation::DeadlockUnsafe));
-    scenarios.push_back(make_free_dst_deadlock_scenario("persistent_single_packet_deadlock_with_free_dst",
-                                                        ScenarioExpectation::DeadlockUnsafe));
+    scenarios.push_back(
+        make_free_dst_deadlock_scenario("persistent_single_packet_deadlock_with_free_dst",
+                                        ScenarioExpectation::DeadlockUnsafe));
 
     ThreeSwitchRingScenario missing_s1 = make_base_deadlock_scenario(
         "missing_s1_flow", ScenarioExpectation::DeadlockSafe);
