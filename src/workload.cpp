@@ -873,6 +873,10 @@ void TimedSpec::normalize() {
                     metric = qsum->get_metric();
                 }
                 if (Metric::properties.at(metric).non_decreasing) {
+                    // TODO(wenkaili): Canonicalize normalized DEMAND bounds. The current
+                    // non-decreasing expansion keeps overlapping endpoint-derived specs
+                    // (for example both [t0, T] and [T, T]), which makes base workloads
+                    // print with redundant demand constraints.
                     if (op.get_type() == Op::Type::GE || op.get_type() == Op::Type::GT) {
                         time_range.second = total_time - 1;
                     } else if (op.get_type() == Op::Type::LE || op.get_type() == Op::Type::LT) {
