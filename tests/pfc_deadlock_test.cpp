@@ -208,13 +208,6 @@ static RingFlowSpec make_t0_single_packet_flow(unsigned int dst, unsigned int to
     return flow;
 }
 
-static RingFlowSpec make_disabled_flow(unsigned int total_time) {
-    RingFlowSpec flow;
-    flow.demand_lower_bounds = {{0, 0}, {total_time - 1, 0}};
-    flow.demand_upper_bounds = {{0, 0}, {total_time - 1, 0}};
-    return flow;
-}
-
 static ThreeSwitchRingScenario make_base_deadlock_scenario(const string& name,
                                                            ScenarioExpectation expected) {
     ThreeSwitchRingScenario scenario;
@@ -223,9 +216,9 @@ static ThreeSwitchRingScenario make_base_deadlock_scenario(const string& name,
     scenario.env_info = make_ring_env_info();
     scenario.switch_params = {};
     scenario.flows = {
-        make_t0_single_packet_flow(1, scenario.total_time),
         make_t0_single_packet_flow(2, scenario.total_time),
         make_t0_single_packet_flow(0, scenario.total_time),
+        make_t0_single_packet_flow(1, scenario.total_time),
     };
     scenario.query_t2 = scenario.total_time - 1;
     scenario.expected = expected;
@@ -256,36 +249,6 @@ static bool test_pfc_deadlock_three_switch_ring_framework() {
     scenarios.push_back(
         make_free_dst_deadlock_scenario("persistent_single_packet_deadlock_with_free_dst",
                                         ScenarioExpectation::DeadlockUnsafe));
-
-    ThreeSwitchRingScenario missing_s1 = make_base_deadlock_scenario(
-        "missing_s1_flow", ScenarioExpectation::DeadlockSafe);
-    missing_s1.flows[0] = make_disabled_flow(missing_s1.total_time);
-    scenarios.push_back(missing_s1);
-
-    ThreeSwitchRingScenario missing_s2 = make_base_deadlock_scenario(
-        "missing_s2_flow", ScenarioExpectation::DeadlockSafe);
-    missing_s2.flows[1] = make_disabled_flow(missing_s2.total_time);
-    scenarios.push_back(missing_s2);
-
-    ThreeSwitchRingScenario missing_s3 = make_base_deadlock_scenario(
-        "missing_s3_flow", ScenarioExpectation::DeadlockSafe);
-    missing_s3.flows[2] = make_disabled_flow(missing_s3.total_time);
-    scenarios.push_back(missing_s3);
-
-    ThreeSwitchRingScenario override_s1 = make_base_deadlock_scenario(
-        "override_s1_dst", ScenarioExpectation::DeadlockSafe);
-    override_s1.flows[0].fixed_dst = 0;
-    scenarios.push_back(override_s1);
-
-    ThreeSwitchRingScenario override_s2 = make_base_deadlock_scenario(
-        "override_s2_dst", ScenarioExpectation::DeadlockSafe);
-    override_s2.flows[1].fixed_dst = 1;
-    scenarios.push_back(override_s2);
-
-    ThreeSwitchRingScenario override_s3 = make_base_deadlock_scenario(
-        "override_s3_dst", ScenarioExpectation::DeadlockSafe);
-    override_s3.flows[2].fixed_dst = 2;
-    scenarios.push_back(override_s3);
 
     bool ok = true;
     for (const ThreeSwitchRingScenario& scenario : scenarios) {

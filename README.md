@@ -21,6 +21,10 @@ fperf currently runs on Z3 v4.8.11 [link](https://github.com/Z3Prover/z3/release
 	- This adds `-DDEBUG` at build time and enables fperf's built-in debug prints from the solver path
 	- On `SAT`, fperf prints the model/state dump
 	- On `UNSAT`, fperf prints the unsat core
+	- To debug only the 3-switch ring PFC deadlock test:
+	  `make DEBUG=1 build/fperf_test && ./build/fperf_test pfc_deadlock_three_switch_ring_framework`
+	- To debug only the 3-switch ring PFC deadlock test and save the output:
+	  `make DEBUG=1 build/fperf_test && ./build/fperf_test pfc_deadlock_three_switch_ring_framework 2>&1 | tee ./pfc_deadlock_debug.log`
 
 ### Branch Regression Script (main vs shared-buffer)
 Use `scripts/branch_regression.sh` to compare two branches in isolated export directories.

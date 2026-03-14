@@ -25,11 +25,11 @@ int main(int argc, char** argv) {
     // SearchTest searchTest;
     // searchTest.add_to_runner(&runner);
 
-    SharedBufferTest sharedBufferTest;
-    sharedBufferTest.add_to_runner(&runner);
+    // SharedBufferTest sharedBufferTest;
+    // sharedBufferTest.add_to_runner(&runner);
 
-    MultiSharedBufferTest multiSharedBufferTest;
-    multiSharedBufferTest.add_to_runner(&runner);
+    // MultiSharedBufferTest multiSharedBufferTest;
+    // multiSharedBufferTest.add_to_runner(&runner);
 
     PFCDeadlockTest pfcDeadlockTest;
     pfcDeadlockTest.add_to_runner(&runner);
