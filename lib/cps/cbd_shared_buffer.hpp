@@ -14,6 +14,10 @@
 #include "shared_buffer_switch_qm.hpp"
 
 struct CBDRingEdge {
+    // CBD edges are modeled at ingress granularity: src ingress waits on dst ingress.
+    // The edge itself is selected from a topology/path analysis that already establishes that a
+    // flow can traverse src ingress -> dst ingress. src_egress remains only as an implementation
+    // witness used to resolve whether the corresponding physical paused link is active.
     cid_t src_switch;
     unsigned int src_ingress;
     unsigned int src_egress;

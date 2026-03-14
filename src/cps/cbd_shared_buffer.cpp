@@ -112,12 +112,9 @@ expr CBDSharedBufferCP::ring_edge_pending_to_egress(const CBDRingEdge& edge, uns
 
 expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t) const {
     SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
-    SharedBufferSwitchQM* dst_qm = get_switch_qm(edge.dst_switch);
-
-    return ring_edge_pending_to_egress(edge, t) &&
-           src_qm->egress_blocked(edge.src_egress, t, edge.priority) &&
-           dst_qm->cbd_ingress_has_pkt(edge.dst_ingress, t, edge.priority) &&
-           dst_qm->cbd_ingress_paused(edge.dst_ingress, t, edge.priority);
+    // CBD topology already chooses only ingress-to-ingress edges that carry a flow. At runtime,
+    // the wait edge is active exactly when the corresponding src->dst physical link is PFC-blocked.
+    return src_qm->egress_blocked(edge.src_egress, t, edge.priority);
 }
 
 expr CBDSharedBufferCP::ring_node_deadlock(const CBDNodeRef& node, unsigned int t) const {
@@ -313,7 +310,7 @@ void CBDSharedBufferCP::add_metrics() {
     }
 
     for (const CBDRingEdge& edge : ring_edges_) {
-        Queue* queue = get_switch_qm(edge.src_switch)->get_out_queue(edge.src_egress);
+        Queue* queue = get_switch_qm(edge.dst_switch)->get_in_queue(edge.dst_ingress);
         vector<expr> active_exprs;
         active_exprs.reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
@@ -400,7 +397,7 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
            << " out->(" << out_edge.dst_switch << ", q" << out_edge.dst_ingress << ")" << endl;
     }
 
-    ss << "ring edges: active" << endl;
+    ss << "ring paused links: active" << endl;
     for (unsigned int edge_idx = 0; edge_idx < ring_edges_.size(); edge_idx++) {
         const CBDRingEdge& edge = ring_edges_[edge_idx];
         ss << "(" << edge.src_switch << ", q" << edge.src_ingress << ", e" << edge.src_egress
