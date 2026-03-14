@@ -360,6 +360,27 @@ void CBDSharedBufferCP::add_in_queue_constrs() {
 
 string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned int t) {
     stringstream ss;
+    auto pkt_debug_str = [&](const expr& pkt) {
+        expr val = m.eval(net_ctx.pkt2val(pkt), true);
+        if (!val.is_true()) return string("x");
+
+        stringstream ps;
+        ps << "[";
+        expr meta1 = m.eval(net_ctx.pkt2meta1(pkt), true);
+        if (meta1.is_numeral())
+            ps << "dst=" << meta1.get_numeral_int();
+        else
+            ps << "dst=-";
+        ps << " ";
+        expr meta2 = m.eval(net_ctx.pkt2meta2(pkt), true);
+        if (meta2.is_numeral())
+            ps << "meta2=" << meta2.get_numeral_int();
+        else
+            ps << "meta2=-";
+        ps << "]";
+        return ps.str();
+    };
+
     ss << "cbd_shared_buffer_cp"
        << " switches=" << switch_order_.size()
        << ", ring_edges=" << ring_edges_.size() << endl;
@@ -379,6 +400,16 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
         ss << "(" << edge.src_switch << ", q" << edge.src_ingress << ", e" << edge.src_egress
            << ") -> (" << edge.dst_switch << ", q" << edge.dst_ingress << ", p" << edge.priority
            << "): " << m.eval(cbd_wait_edge_[edge_idx]->val(t).second).get_numeral_int() << endl;
+    }
+
+    ss << "ring forwarding:" << endl;
+    for (const CBDRingEdge& edge : ring_edges_) {
+        Queue* tx_queue = get_switch_qm(edge.dst_switch)->get_in_queue(edge.dst_ingress);
+        expr& tx_pkt = tx_queue->enqs(0)[t];
+        ss << "(" << edge.src_switch << ", e" << edge.src_egress << ") -> "
+           << "(" << edge.dst_switch << ", q" << edge.dst_ingress << ")"
+           << " tx_pkt=" << pkt_debug_str(tx_pkt)
+           << " next_hop=" << tx_queue->get_id() << endl;
     }
 
     ss << "boundary ingress qid: cenq, demand" << endl;
