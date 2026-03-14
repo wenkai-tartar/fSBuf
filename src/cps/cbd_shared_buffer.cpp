@@ -104,12 +104,6 @@ void CBDSharedBufferCP::populate_boundary_ingress_ser_factors() {
     }
 }
 
-expr CBDSharedBufferCP::ring_edge_pending_to_egress(const CBDRingEdge& edge, unsigned int t) const {
-    SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
-    return src_qm->cbd_ingress_pending_to_egress(
-        edge.src_ingress, edge.src_egress, t, edge.priority);
-}
-
 expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t) const {
     SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
     // CBD topology already chooses only ingress-to-ingress edges that carry a flow. At runtime,
@@ -117,18 +111,11 @@ expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t
     return src_qm->egress_blocked(edge.src_egress, t, edge.priority);
 }
 
-expr CBDSharedBufferCP::ring_node_deadlock(const CBDNodeRef& node, unsigned int t) const {
-    SharedBufferSwitchQM* qm = get_switch_qm(node.switch_id);
-    const CBDRingEdge& in_edge = incoming_ring_edge(node);
-    const CBDRingEdge& out_edge = outgoing_ring_edge(node);
-
-    return qm->cbd_ingress_has_pkt(node.ingress, t, node.priority) &&
-           qm->cbd_ingress_paused(node.ingress, t, node.priority) &&
-           qm->cbd_ingress_no_progress(node.ingress, t, node.priority) &&
-           ring_edge_active(in_edge, t) && ring_edge_active(out_edge, t);
-}
-
 void CBDSharedBufferCP::validate_and_index_ring() {
+    // TODO(wenkaili): Generalize CBD topology handling beyond a single ring. For leaf-spine or
+    // other arbitrary topologies, replace this one-in/one-out + single-cycle validation with
+    // generic directed-graph indexing, and detect PFC deadlock by checking whether the active
+    // paused-edge subgraph contains any directed cycle.
     ring_nodes_.clear();
     incoming_ring_edge_idx_.clear();
     outgoing_ring_edge_idx_.clear();
@@ -311,6 +298,9 @@ void CBDSharedBufferCP::add_metrics() {
 
     for (const CBDRingEdge& edge : ring_edges_) {
         Queue* queue = get_switch_qm(edge.dst_switch)->get_in_queue(edge.dst_ingress);
+        // TODO(wenkaili): This queue-backed metric identity assumes ring validation guarantees a
+        // unique incoming CBD edge per ingress. Once CBD supports general topologies, represent
+        // CBD_WAIT_EDGE by edge identity (for example edge_idx) instead of dst ingress queue id.
         vector<expr> active_exprs;
         active_exprs.reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
@@ -321,20 +311,6 @@ void CBDSharedBufferCP::add_metrics() {
         cbd_wait_edge_.push_back(wait_edge);
         metrics[metric_t::CBD_WAIT_EDGE][queue->get_id()] = wait_edge;
         queue->add_metric(metric_t::CBD_WAIT_EDGE, wait_edge);
-    }
-
-    for (const CBDNodeRef& node : ring_nodes_) {
-        Queue* queue = get_switch_qm(node.switch_id)->get_in_queue(node.ingress);
-        vector<expr> blocked_exprs;
-        blocked_exprs.reserve(total_time);
-        for (unsigned int t = 0; t < total_time; t++) {
-            blocked_exprs.push_back(ring_node_deadlock(node, t));
-        }
-
-        CBDDeadlockNode* deadlock_node = new CBDDeadlockNode(queue, total_time, blocked_exprs, net_ctx);
-        cbd_deadlock_node_.push_back(deadlock_node);
-        metrics[metric_t::CBD_DEADLOCK_NODE][queue->get_id()] = deadlock_node;
-        queue->add_metric(metric_t::CBD_DEADLOCK_NODE, deadlock_node);
     }
 }
 
@@ -403,13 +379,6 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
         ss << "(" << edge.src_switch << ", q" << edge.src_ingress << ", e" << edge.src_egress
            << ") -> (" << edge.dst_switch << ", q" << edge.dst_ingress << ", p" << edge.priority
            << "): " << m.eval(cbd_wait_edge_[edge_idx]->val(t).second).get_numeral_int() << endl;
-    }
-
-    ss << "ring nodes: deadlock" << endl;
-    for (unsigned int node_idx = 0; node_idx < ring_nodes_.size(); node_idx++) {
-        const CBDNodeRef& node = ring_nodes_[node_idx];
-        ss << "(" << node.switch_id << ", q" << node.ingress << ", p" << node.priority
-           << "): " << m.eval(cbd_deadlock_node_[node_idx]->val(t).second).get_numeral_int() << endl;
     }
 
     ss << "boundary ingress qid: cenq, demand" << endl;

@@ -5,7 +5,6 @@
 #include <tuple>
 
 #include "cenq.hpp"
-#include "cbd_deadlock_node.hpp"
 #include "cbd_wait_edge.hpp"
 #include "demand.hpp"
 #include "dst.hpp"
@@ -82,7 +81,6 @@ private:
     std::vector<CEnq*> cenq_;
     std::vector<CEnq*> out_cenq_;
     std::vector<CBDWaitEdge*> cbd_wait_edge_;
-    std::vector<CBDDeadlockNode*> cbd_deadlock_node_;
     std::vector<Demand*> demand_;
     std::vector<Dst*> dst_;
 
@@ -91,9 +89,7 @@ private:
     CBDEgressRef src_egress(const CBDRingEdge& edge) const;
     SharedBufferSwitchQM* get_switch_qm(const cid_t& switch_id) const;
     void populate_boundary_ingress_ser_factors();
-    expr ring_edge_pending_to_egress(const CBDRingEdge& edge, unsigned int t) const;
     expr ring_edge_active(const CBDRingEdge& edge, unsigned int t) const;
-    expr ring_node_deadlock(const CBDNodeRef& node, unsigned int t) const;
     void validate_and_index_ring();
     void add_nodes() override;
     void add_edges() override;

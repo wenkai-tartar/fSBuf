@@ -146,22 +146,22 @@ static Workload make_three_switch_ring_workload(CBDSharedBufferCP& cp,
 }
 
 static Query make_deadlock_query(CBDSharedBufferCP& cp, const ThreeSwitchRingScenario& scenario) {
-    qsum_t ring_node_qids;
-    ring_node_qids.reserve(cp.ring_nodes().size());
+    qsum_t ring_edge_qids;
+    ring_edge_qids.reserve(cp.ring_nodes().size());
     for (const CBDNodeRef& node : cp.ring_nodes()) {
         SharedBufferSwitchQM* qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm(node.switch_id));
         if (qm == nullptr) {
             throw runtime_error("PFC deadlock framework failed to resolve switch QM");
         }
-        ring_node_qids.push_back(qm->get_in_queue(node.ingress)->get_id());
+        ring_edge_qids.push_back(qm->get_in_queue(node.ingress)->get_id());
     }
 
     return Query(query_quant_t::FORALL,
                  time_range_t(scenario.query_t1, scenario.query_t2),
-                 ring_node_qids,
-                 metric_t::CBD_DEADLOCK_NODE,
+                 ring_edge_qids,
+                 metric_t::CBD_WAIT_EDGE,
                  Op(Op::Type::GE),
-                 ring_node_qids.size());
+                 ring_edge_qids.size());
 }
 
 static ScenarioResult run_three_switch_ring_scenario(const ThreeSwitchRingScenario& scenario) {
