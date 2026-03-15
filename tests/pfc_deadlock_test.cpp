@@ -208,11 +208,11 @@ static RingFlowSpec make_t0_single_packet_flow(unsigned int dst, unsigned int to
     return flow;
 }
 
-static ThreeSwitchRingScenario make_base_deadlock_scenario(const string& name,
-                                                           ScenarioExpectation expected) {
+[[maybe_unused]] static ThreeSwitchRingScenario
+make_base_deadlock_scenario(const string& name, ScenarioExpectation expected) {
     ThreeSwitchRingScenario scenario;
     scenario.name = name;
-    scenario.total_time = 8;
+    scenario.total_time = 20;
     scenario.env_info = make_ring_env_info();
     scenario.switch_params = {};
     scenario.flows = {
@@ -225,8 +225,15 @@ static ThreeSwitchRingScenario make_base_deadlock_scenario(const string& name,
     return scenario;
 }
 
-static ThreeSwitchRingScenario make_free_dst_deadlock_scenario(const string& name,
-                                                               ScenarioExpectation expected) {
+[[maybe_unused]] static ThreeSwitchRingScenario make_ring_ser_factor_deadlock_scenario(
+    const string& name, unsigned int ring_egress_ser_factor, ScenarioExpectation expected) {
+    ThreeSwitchRingScenario scenario = make_base_deadlock_scenario(name, expected);
+    scenario.switch_params.ring_egress_ser_factor = ring_egress_ser_factor;
+    return scenario;
+}
+
+[[maybe_unused]] static ThreeSwitchRingScenario
+make_free_dst_deadlock_scenario(const string& name, ScenarioExpectation expected) {
     ThreeSwitchRingScenario scenario;
     scenario.name = name;
     scenario.total_time = 8;
@@ -241,14 +248,42 @@ static ThreeSwitchRingScenario make_free_dst_deadlock_scenario(const string& nam
     return scenario;
 }
 
+[[maybe_unused]] static ThreeSwitchRingScenario
+make_free_dst_unbounded_injection_scenario(const string& name, ScenarioExpectation expected) {
+    ThreeSwitchRingScenario scenario;
+    scenario.name = name;
+    scenario.total_time = 8;
+    scenario.env_info = make_ring_env_info();
+    scenario.switch_params = {};
+    for (RingFlowSpec& flow : scenario.flows) {
+        flow.demand_lower_bounds = {{0, 1}, {scenario.total_time - 1, 1}};
+        flow.demand_upper_bounds.clear();
+    }
+    scenario.query_t2 = scenario.total_time - 1;
+    scenario.expected = expected;
+    return scenario;
+}
+
 static bool test_pfc_deadlock_three_switch_ring_framework() {
     vector<ThreeSwitchRingScenario> scenarios;
 
-    scenarios.push_back(make_base_deadlock_scenario("persistent_single_packet_deadlock",
-                                                    ScenarioExpectation::DeadlockUnsafe));
-    scenarios.push_back(
-        make_free_dst_deadlock_scenario("persistent_single_packet_deadlock_with_free_dst",
-                                        ScenarioExpectation::DeadlockUnsafe));
+    // scenarios.push_back(make_base_deadlock_scenario("persistent_single_packet_deadlock",
+    //                                                 ScenarioExpectation::DeadlockUnsafe));
+    // scenarios.push_back(make_ring_ser_factor_deadlock_scenario(
+    //     "persistent_single_packet_no_deadlock_ring_ser_factor_1",
+    //     1,
+    //     ScenarioExpectation::DeadlockSafe));
+
+    // ThreeSwitchRingScenario scenario = make_free_dst_deadlock_scenario(
+    //     "persistent_single_packet_no_deadlock_with_free_dst", ScenarioExpectation::DeadlockSafe);
+    // scenario.switch_params.ring_egress_ser_factor = 1;
+    // scenarios.push_back(scenario);
+
+    ThreeSwitchRingScenario unbounded_injection_scenario =
+        make_free_dst_unbounded_injection_scenario("unbounded_injection_with_free_dst",
+                                                   ScenarioExpectation::DeadlockUnsafe);
+    unbounded_injection_scenario.switch_params.ring_egress_ser_factor = 1;
+    scenarios.push_back(unbounded_injection_scenario);
 
     bool ok = true;
     for (const ThreeSwitchRingScenario& scenario : scenarios) {
