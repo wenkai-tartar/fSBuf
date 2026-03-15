@@ -4,6 +4,8 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "enq.hpp"
+
 using namespace std;
 
 CBDSharedBufferCP::CBDSharedBufferCP(unsigned int total_time,
@@ -249,6 +251,10 @@ void CBDSharedBufferCP::add_metrics() {
         cenq_.push_back(ce);
         metrics[metric_t::CENQ][queue->get_id()] = ce;
         queue->add_metric(metric_t::CENQ, ce);
+
+        Enq* enq = new Enq(queue, total_time, net_ctx);
+        metrics[metric_t::ENQ][queue->get_id()] = enq;
+        queue->add_metric(metric_t::ENQ, enq);
     }
 
     for (unsigned int q = 0; q < out_queues.size(); q++) {
@@ -257,6 +263,10 @@ void CBDSharedBufferCP::add_metrics() {
         out_cenq_.push_back(ce);
         metrics[metric_t::CENQ][queue->get_id()] = ce;
         queue->add_metric(metric_t::CENQ, ce);
+
+        Enq* enq = new Enq(queue, total_time, net_ctx);
+        metrics[metric_t::ENQ][queue->get_id()] = enq;
+        queue->add_metric(metric_t::ENQ, enq);
     }
 
     for (const cid_t& switch_id : switch_order_) {
@@ -268,6 +278,11 @@ void CBDSharedBufferCP::add_metrics() {
                 metrics[metric_t::CENQ][queue->get_id()] = ce;
                 queue->add_metric(metric_t::CENQ, ce);
             }
+            if (metrics[metric_t::ENQ].find(queue->get_id()) == metrics[metric_t::ENQ].end()) {
+                Enq* enq = new Enq(queue, total_time, net_ctx);
+                metrics[metric_t::ENQ][queue->get_id()] = enq;
+                queue->add_metric(metric_t::ENQ, enq);
+            }
         }
 
         for (unsigned int q = 0; q < qm->out_queue_cnt(); q++) {
@@ -276,6 +291,11 @@ void CBDSharedBufferCP::add_metrics() {
                 CEnq* ce = new CEnq(queue, total_time, net_ctx);
                 metrics[metric_t::CENQ][queue->get_id()] = ce;
                 queue->add_metric(metric_t::CENQ, ce);
+            }
+            if (metrics[metric_t::ENQ].find(queue->get_id()) == metrics[metric_t::ENQ].end()) {
+                Enq* enq = new Enq(queue, total_time, net_ctx);
+                metrics[metric_t::ENQ][queue->get_id()] = enq;
+                queue->add_metric(metric_t::ENQ, enq);
             }
         }
     }

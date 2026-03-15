@@ -14,6 +14,7 @@
 
 const map<metric_t, metric_properties> Metric::properties = {
     {metric_t::CENQ, {true, true, true}},
+    {metric_t::ENQ, {true, false, true}},
     {metric_t::AIPG, {true, false, false}},
     {metric_t::DST, {true, false, false}},
     {metric_t::ECMP, {true, false, false}},
@@ -58,6 +59,7 @@ metric_t Metric::get_type() {
 ostream& operator<<(ostream& os, const metric_t& metric) {
     switch (metric) {
         case (metric_t::CENQ): os << "cenq"; break;
+        case (metric_t::ENQ): os << "enq"; break;
         case (metric_t::QSIZE): os << "qsize"; break;
         case (metric_t::CDEQ): os << "cdeq"; break;
         case (metric_t::DEQ): os << "deq"; break;

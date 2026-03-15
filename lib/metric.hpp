@@ -20,6 +20,7 @@ class Queue;
 
 enum class metric_t {
     CENQ = 0,
+    ENQ,
     AIPG,
     DST,
     ECMP,
