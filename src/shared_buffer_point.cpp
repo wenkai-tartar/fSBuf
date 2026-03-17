@@ -59,9 +59,6 @@ void SharedBufferPoint::add_in_queue_constrs() {
 
         for (unsigned int t = 0; t < total_time; t++) {
             expr demand_t = demand_metric->val(t).second;
-            if (t > 0) {
-                demand_t = demand_t - demand_metric->val(t - 1).second;
-            }
 
             snprintf(constr_name, sizeof(constr_name), "sb_boundary_demand_lb_q%u_t%u", q, t);
             // Per-slot external demand must be non-negative.

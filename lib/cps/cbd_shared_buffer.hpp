@@ -6,6 +6,7 @@
 
 #include "cenq.hpp"
 #include "cbd_wait_edge.hpp"
+#include "cdemand.hpp"
 #include "demand.hpp"
 #include "dst.hpp"
 #include "shared_buffer_point.hpp"
@@ -82,6 +83,7 @@ private:
     std::vector<CEnq*> out_cenq_;
     std::vector<CBDWaitEdge*> cbd_wait_edge_;
     std::vector<Demand*> demand_;
+    std::vector<CDemand*> cdemand_;
     std::vector<Dst*> dst_;
 
     CBDNodeRef src_node(const CBDRingEdge& edge) const;

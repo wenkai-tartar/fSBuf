@@ -157,6 +157,11 @@ void MultiSharedBufferCP::add_metrics() {
         demand_.push_back(d);
         metrics[metric_t::DEMAND][queue->get_id()] = d;
         queue->add_metric(metric_t::DEMAND, d);
+
+        CDemand* cd = new CDemand(queue, d, total_time, net_ctx);
+        cdemand_.push_back(cd);
+        metrics[metric_t::CDEMAND][queue->get_id()] = cd;
+        queue->add_metric(metric_t::CDEMAND, cd);
     }
 
     for (unsigned int q = 0; q < in_queues.size(); q++) {
@@ -223,9 +228,6 @@ void MultiSharedBufferCP::add_in_queue_constrs() {
 
         for (unsigned int t = 0; t < total_time; t++) {
             expr demand_t = demand_metric->val(t).second;
-            if (t > 0) {
-                demand_t = demand_t - demand_metric->val(t - 1).second;
-            }
 
             expr can_inject = net_ctx.bool_val(true);
             for (unsigned int dt = 1; dt < ser_factor && dt <= t; dt++) {
@@ -249,11 +251,12 @@ string MultiSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned
        << " switches=" << switch_order_.size()
        << ", internal_edges=" << internal_edges_.size() << endl;
 
-    ss << "boundary ingress qid: cenq, demand" << endl;
+    ss << "boundary ingress qid: cenq, demand, cdemand" << endl;
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         Queue* queue = in_queues[q];
         ss << queue->get_id() << ": " << m.eval(cenq_[q]->val(t).second).get_numeral_int();
         ss << ", " << m.eval(demand_[q]->val(t).second).get_numeral_int();
+        ss << ", " << m.eval(cdemand_[q]->val(t).second).get_numeral_int();
         ss << endl;
     }
 

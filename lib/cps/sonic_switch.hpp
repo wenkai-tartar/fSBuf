@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "cenq.hpp"
+#include "cdemand.hpp"
 #include "demand.hpp"
 #include "dst.hpp"
 #include "sender_paused.hpp"
@@ -34,6 +35,7 @@ private:
     vector<CEnq*> cenq_;
     vector<CEnq*> out_cenq_;
     vector<Demand*> demand_;
+    vector<CDemand*> cdemand_;
     vector<Dst*> dst_;
     vector<SenderPaused*> sender_paused_;
 

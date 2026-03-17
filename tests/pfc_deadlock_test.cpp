@@ -123,12 +123,14 @@ static void add_demand_bounds(Workload& wl,
 static Workload make_three_switch_ring_workload(CBDSharedBufferCP& cp,
                                                 const ThreeSwitchRingScenario& scenario) {
     Workload wl(100, cp.in_queue_cnt(), scenario.total_time);
+    qset_t boundary_ingress_qset;
     for (unsigned int q = 0; q < scenario.flows.size(); q++) {
+        boundary_ingress_qset.insert(q);
         const RingFlowSpec& flow = scenario.flows[q];
         add_demand_bounds(
-            wl, q, metric_t::DEMAND, flow.demand_lower_bounds, Op::Type::GE, scenario.total_time);
+            wl, q, metric_t::CDEMAND, flow.demand_lower_bounds, Op::Type::GE, scenario.total_time);
         add_demand_bounds(
-            wl, q, metric_t::DEMAND, flow.demand_upper_bounds, Op::Type::LE, scenario.total_time);
+            wl, q, metric_t::CDEMAND, flow.demand_upper_bounds, Op::Type::LE, scenario.total_time);
         if (flow.fixed_dst >= 0 && flow.dst_anchor_time >= 0) {
             wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DST, q),
                                            Op(Op::Type::EQ),
@@ -142,6 +144,13 @@ static Workload make_three_switch_ring_workload(CBDSharedBufferCP& cp,
             }
         }
     }
+    // Each boundary ingress demand is already capped to 1 per slot, so summing DEMAND directly
+    // enforces at most one queue expressing input intent in any slot.
+    // wl.add_spec(TimedSpec(new Comp(new QSum(boundary_ingress_qset, metric_t::DEMAND),
+    //                                Op(Op::Type::LE),
+    //                                new Constant(2)),
+    //                       time_range_t(0, scenario.total_time - 1),
+    //                       scenario.total_time));
     return wl;
 }
 
@@ -256,8 +265,8 @@ make_free_dst_unbounded_injection_scenario(const string& name, ScenarioExpectati
     scenario.env_info = make_ring_env_info();
     scenario.switch_params = {};
     for (RingFlowSpec& flow : scenario.flows) {
-        flow.demand_lower_bounds = {{0, 1}, {scenario.total_time - 1, 1}};
-        flow.demand_upper_bounds.clear();
+        flow.demand_lower_bounds = {{scenario.total_time - 1, 0}};
+        flow.demand_upper_bounds = {{scenario.total_time - 1, (int) scenario.total_time}};
     }
     scenario.query_t2 = scenario.total_time - 1;
     scenario.expected = expected;

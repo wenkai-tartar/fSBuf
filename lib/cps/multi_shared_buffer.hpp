@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "cenq.hpp"
+#include "cdemand.hpp"
 #include "demand.hpp"
 #include "dst.hpp"
 #include "sender_paused.hpp"
@@ -44,6 +45,7 @@ private:
     std::vector<CEnq*> switch_in_cenq_;
     std::vector<CEnq*> switch_out_cenq_;
     std::vector<Demand*> demand_;
+    std::vector<CDemand*> cdemand_;
     std::vector<Dst*> dst_;
     std::vector<SenderPaused*> sender_paused_;
 

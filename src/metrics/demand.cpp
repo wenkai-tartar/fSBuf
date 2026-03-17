@@ -22,10 +22,7 @@ const expr& Demand::demand_cnt(unsigned int t) const {
 
 void Demand::eval(const IndexedExample* eg, unsigned int time, unsigned int qind, metric_val& res) {
     res.valid = true;
-    res.value = 0;
-    for (unsigned int t = 0; t <= time; t++) {
-        res.value += eg->demands[qind][t];
-    }
+    res.value = eg->demands[qind][time];
 }
 
 void Demand::populate_val_exprs(NetContext& net_ctx) {
@@ -38,9 +35,8 @@ void Demand::populate_val_exprs(NetContext& net_ctx) {
     }
 
     // value
-    value_[0] = demand_cnt_[0];
-    for (unsigned int t = 1; t < total_time; t++) {
-        value_[t] = value_[t - 1] + demand_cnt_[t];
+    for (unsigned int t = 0; t < total_time; t++) {
+        value_[t] = demand_cnt_[t];
     }
 
     // valid

@@ -873,7 +873,7 @@ void TimedSpec::normalize() {
                     metric = qsum->get_metric();
                 }
                 if (Metric::properties.at(metric).non_decreasing) {
-                    // TODO(wenkaili): Canonicalize normalized DEMAND bounds. The current
+                    // TODO(wenkaili): Canonicalize normalized cumulative-demand bounds. The current
                     // non-decreasing expansion keeps overlapping endpoint-derived specs
                     // (for example both [t0, T] and [T, T]), which makes base workloads
                     // print with redundant demand constraints.

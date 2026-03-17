@@ -18,19 +18,18 @@ static void add_fixed_dst_specs(Workload& wl, unsigned int queue, unsigned int t
 }
 
 static vector<int> make_four_packet_burst_demand_trace(unsigned int total_time) {
-    vector<int> demand_trace(total_time, -1);
+    vector<int> demand_trace(total_time, 0);
     if (total_time > 0) {
         demand_trace[0] = 1;
     }
     if (total_time > 1) {
-        demand_trace[1] = 2;
+        demand_trace[1] = 1;
     }
     if (total_time > 2) {
-        demand_trace[2] = 3;
+        demand_trace[2] = 1;
     }
     if (total_time > 3) {
-        demand_trace[3] = 4;
-        demand_trace[total_time - 1] = 4;
+        demand_trace[3] = 1;
     }
     return demand_trace;
 }
@@ -85,7 +84,7 @@ run_single_ingress_cenq_query(unsigned int total_time,
 
     Workload wl(10, sw.in_queue_cnt(), total_time);
     wl.add_spec(TimedSpec(
-        new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::GE), new Constant(demand_lb)),
+        new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::GE), new Constant(demand_lb)),
         time_range_t(total_time - 1, total_time - 1),
         total_time));
     if (dst_eq >= 0) {
@@ -119,7 +118,7 @@ run_output_cenq_query(unsigned int total_time,
     Workload wl(20, sw.in_queue_cnt(), total_time);
     for (unsigned int q = 0; q < sw.in_queue_cnt(); q++) {
         if (q < demand_lb.size() && demand_lb[q] >= 0) {
-            wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q),
+            wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, q),
                                            Op(Op::Type::GE),
                                            new Constant(demand_lb[q])),
                                   time_range_t(total_time - 1, total_time - 1),
@@ -162,7 +161,7 @@ run_ingress_cenq_diff_query(unsigned int total_time,
     Workload wl(20, sw.in_queue_cnt(), total_time);
     for (unsigned int q = 0; q < sw.in_queue_cnt(); q++) {
         if (q < demand_lb.size() && demand_lb[q] >= 0) {
-            wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q),
+            wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, q),
                                            Op(Op::Type::GE),
                                            new Constant(demand_lb[q])),
                                   time_range_t(total_time - 1, total_time - 1),
@@ -207,7 +206,7 @@ bool test_shared_buffer_no_congestion_full_throughput() {
     SONiCSwitch* sw = new SONiCSwitch(total_time, env_info, switch_info);
 
     Workload wl(10, sw->in_queue_cnt(), total_time);
-    wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::GE), new Time(1)),
+    wl.add_spec(TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::GE), new Constant(1)),
                           time_range_t(0, total_time - 1),
                           total_time));
     sw->set_base_workload(wl);
@@ -244,9 +243,9 @@ bool test_shared_buffer_ingress_rate_limit() {
     switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
     switch_info.ingress_ser_factor = {2};
 
-    cout << "[shared_buffer_ingress_rate_limit] SAT case: demand(T)>=4, cenq(T)>=3" << endl;
+    cout << "[shared_buffer_ingress_rate_limit] SAT case: cdemand(T)>=4, cenq(T)>=3" << endl;
     solver_res_t sat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 4, 3);
-    cout << "[shared_buffer_ingress_rate_limit] UNSAT case: demand(T)>=4, cenq(T)>=4" << endl;
+    cout << "[shared_buffer_ingress_rate_limit] UNSAT case: cdemand(T)>=4, cenq(T)>=4" << endl;
     solver_res_t unsat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 4, 4);
 
     cout << "sat-bound: " << sat_res << endl;
@@ -272,9 +271,9 @@ bool test_shared_buffer_egress_backpressure() {
     switch_info.timing_mode = SharedBufferSwitchInfo::TimingMode::DEQ_FIRST;
     switch_info.egress_ser_factor = {2};
 
-    cout << "[shared_buffer_egress_backpressure] SAT case: demand(T)>=5, cenq(T)>=2" << endl;
+    cout << "[shared_buffer_egress_backpressure] SAT case: cdemand(T)>=5, cenq(T)>=2" << endl;
     solver_res_t sat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 2);
-    cout << "[shared_buffer_egress_backpressure] UNSAT case: demand(T)>=5, cenq(T)>=3" << endl;
+    cout << "[shared_buffer_egress_backpressure] UNSAT case: cdemand(T)>=5, cenq(T)>=3" << endl;
     solver_res_t unsat_res = run_single_ingress_cenq_query(total_time, env_info, switch_info, 5, 3);
 
     cout << "sat-bound: " << sat_res << endl;

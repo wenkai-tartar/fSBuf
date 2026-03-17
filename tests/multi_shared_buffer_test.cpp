@@ -122,7 +122,7 @@ static bool test_two_switch_chain_base_workload_sat() {
 
     Workload wl(8, cp.in_queue_cnt(), total_time);
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
                   time_range_t(total_time - 1, total_time - 1),
                   total_time));
 
@@ -135,7 +135,7 @@ static Workload make_two_switch_chain_single_packet_workload(MultiSharedBufferCP
                                                              unsigned int total_time) {
     Workload wl(9, cp.in_queue_cnt(), total_time);
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
                   time_range_t(total_time - 1, total_time - 1),
                   total_time));
     return wl;
@@ -145,7 +145,7 @@ static Workload make_two_switch_chain_full_rate_workload(MultiSharedBufferCP& cp
                                                          unsigned int total_time) {
     Workload wl(12, cp.in_queue_cnt(), total_time);
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0),
                            Op(Op::Type::EQ),
                            new Constant((int) total_time)),
                   time_range_t(total_time - 1, total_time - 1),
@@ -157,23 +157,23 @@ static Workload make_two_switch_chain_four_packet_burst_workload(MultiSharedBuff
                                                                  unsigned int total_time) {
     Workload wl(13, cp.in_queue_cnt(), total_time);
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
                   time_range_t(0, 0),
                   total_time));
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(2)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(2)),
                   time_range_t(1, 1),
                   total_time));
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(3)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(3)),
                   time_range_t(2, 2),
                   total_time));
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(4)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(4)),
                   time_range_t(3, 3),
                   total_time));
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(4)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(4)),
                   time_range_t(total_time - 1, total_time - 1),
                   total_time));
     return wl;
@@ -183,11 +183,11 @@ static Workload make_two_switch_chain_t0_single_packet_workload(MultiSharedBuffe
                                                                 unsigned int total_time) {
     Workload wl(10, cp.in_queue_cnt(), total_time);
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
                   time_range_t(0, 0),
                   total_time));
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
                   time_range_t(total_time - 1, total_time - 1),
                   total_time));
     return wl;
@@ -197,15 +197,15 @@ static Workload make_two_switch_chain_t0_t1_two_packet_workload(MultiSharedBuffe
                                                                 unsigned int total_time) {
     Workload wl(11, cp.in_queue_cnt(), total_time);
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(1)),
                   time_range_t(0, 0),
                   total_time));
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(2)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(2)),
                   time_range_t(1, 1),
                   total_time));
     wl.add_spec(
-        TimedSpec(new Comp(new Indiv(metric_t::DEMAND, 0), Op(Op::Type::EQ), new Constant(2)),
+        TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, 0), Op(Op::Type::EQ), new Constant(2)),
                   time_range_t(total_time - 1, total_time - 1),
                   total_time));
     return wl;
@@ -216,11 +216,11 @@ static Workload make_two_switch_two_source_t0_two_packet_workload(MultiSharedBuf
     Workload wl(14, cp.in_queue_cnt(), total_time);
     for (unsigned int q = 0; q < cp.in_queue_cnt(); q++) {
         wl.add_spec(
-            TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q), Op(Op::Type::EQ), new Constant(1)),
+            TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, q), Op(Op::Type::EQ), new Constant(1)),
                       time_range_t(0, 0),
                       total_time));
         wl.add_spec(
-            TimedSpec(new Comp(new Indiv(metric_t::DEMAND, q), Op(Op::Type::EQ), new Constant(1)),
+            TimedSpec(new Comp(new Indiv(metric_t::CDEMAND, q), Op(Op::Type::EQ), new Constant(1)),
                       time_range_t(total_time - 1, total_time - 1),
                       total_time));
     }
