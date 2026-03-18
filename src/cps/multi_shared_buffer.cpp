@@ -56,20 +56,6 @@ void MultiSharedBufferCP::populate_boundary_ingress_ser_factors() {
 }
 
 void MultiSharedBufferCP::add_nodes() {
-    QueueInfo in_info{};
-    in_info.size = 1;
-    in_info.max_enq = 1;
-    in_info.max_deq = 1;
-    in_info.meta = 0;
-    in_info.type = queue_t::SB_INGRESS;
-
-    QueueInfo out_info{};
-    out_info.size = 1;
-    out_info.max_enq = 1;
-    out_info.max_deq = 1;
-    out_info.meta = 0;
-    out_info.type = queue_t::SB_EGRESS;
-
     for (MultiSharedBufferSwitchConfig& switch_cfg : switch_configs_) {
         if (switch_cfg.switch_info.ingress_queue_cnt == 0 || switch_cfg.switch_info.egress_queue_cnt == 0) {
             throw runtime_error("MultiSharedBufferCP requires non-zero ingress and egress queue counts");
@@ -78,6 +64,26 @@ void MultiSharedBufferCP::add_nodes() {
         if (switch_cfg.route_policy == nullptr) {
             switch_cfg.route_policy = make_unique<ModuloMeta1RoutePolicy>();
         }
+
+        QueueInfo in_info{};
+        in_info.size = 1;
+        in_info.max_enq = 1;
+        in_info.max_deq = 1;
+        in_info.meta = 0;
+        in_info.type = switch_cfg.switch_info.queue_type ==
+                               SharedBufferSwitchInfo::InterfaceQueueType::IMM_SB
+                           ? queue_t::IMM_SB_INGRESS
+                           : queue_t::SB_INGRESS;
+
+        QueueInfo out_info{};
+        out_info.size = 1;
+        out_info.max_enq = 1;
+        out_info.max_deq = 1;
+        out_info.meta = 0;
+        out_info.type = switch_cfg.switch_info.queue_type ==
+                                SharedBufferSwitchInfo::InterfaceQueueType::IMM_SB
+                            ? queue_t::IMM_SB_EGRESS
+                            : queue_t::SB_EGRESS;
 
         SharedBufferSwitchQM* sb_qm = new SharedBufferSwitchQM(
             switch_cfg.switch_id,

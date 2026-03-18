@@ -20,7 +20,15 @@
 class Metric;
 enum class metric_t;
 
-enum class queue_t { QUEUE = 0, IMM_QUEUE, LINK, SB_INGRESS, SB_EGRESS };
+enum class queue_t {
+    QUEUE = 0,
+    IMM_QUEUE,
+    LINK,
+    SB_INGRESS,
+    SB_EGRESS,
+    IMM_SB_INGRESS,
+    IMM_SB_EGRESS,
+};
 
 struct QueueInfo {
     unsigned int size;
@@ -47,9 +55,12 @@ public:
     unsigned int max_deq();
 
     vector<expr>& operator[](int ind);
+    const vector<expr>& operator[](int ind) const;
     vector<expr>& elem(int ind);
+    const vector<expr>& elem(int ind) const;
 
     vector<expr>& enqs(unsigned int ind);
+    const vector<expr>& enqs(unsigned int ind) const;
     expr& enq_cnt(unsigned int t);
     expr& deq_cnt(unsigned int t);
 
@@ -127,7 +138,7 @@ public:
  * this is a coarse-step link/interface object, not a real packet container.
  * Packet storage lives inside SharedBufferSwitchQM. The queue keeps:
  *   - enqs -> enq_cnt interface visibility
- *   - inert elem state for legacy compatibility
+ *   - elem state that exposes ingress-visible data to the shared-buffer core
  *   - coarse-step pause/resume, receiver-visible control arrivals, and delayed sender-visible
  *     apply state
  *
@@ -166,12 +177,23 @@ public:
     expr& sender_paused(unsigned int t);
     const expr& sender_paused(unsigned int t) const;
 
+protected:
+    virtual expr elem_pkt(unsigned int t, NetContext& net_ctx) const;
+
 private:
     vector<expr> pause_tx_;
     vector<expr> resume_tx_;
     vector<expr> pause_rx_;
     vector<expr> resume_rx_;
     vector<expr> sender_paused_;
+};
+
+class ImmSBQueue : public SBQueue {
+public:
+    using SBQueue::SBQueue;
+
+protected:
+    expr elem_pkt(unsigned int t, NetContext& net_ctx) const override;
 };
 
 /* Compatibility wrappers: legacy code still refers to ingress/egress queue classes,

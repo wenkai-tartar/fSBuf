@@ -297,11 +297,23 @@ vector<expr>& Queue::operator[](int ind) {
     return elems_[ind];
 }
 
+const vector<expr>& Queue::operator[](int ind) const {
+    return elems_[ind];
+}
+
 vector<expr>& Queue::elem(int ind) {
     return elems_[ind];
 }
 
+const vector<expr>& Queue::elem(int ind) const {
+    return elems_[ind];
+}
+
 vector<expr>& Queue::enqs(unsigned int ind) {
+    return enqs_[ind];
+}
+
+const vector<expr>& Queue::enqs(unsigned int ind) const {
     return enqs_[ind];
 }
 
@@ -622,9 +634,11 @@ void SBQueue::add_constrs(NetContext& net_ctx, map<string, expr>& constr_map) {
     char constr_name[120];
 
     for (unsigned int t = 0; t < total_time; t++) {
-        // Shared-buffer interface queues do not model internal packet storage.
-        // Keep element state inert so no legacy queue sliding-window semantics leak in.
-        for (unsigned int p = 0; p < size_; p++) {
+        if (size_ > 0) {
+            snprintf(constr_name, sizeof(constr_name), "%s_elem_pkt_%u", id.c_str(), t);
+            constr_map.insert(named_constr(constr_name, elems_[0][t] == elem_pkt(t, net_ctx)));
+        }
+        for (unsigned int p = 1; p < size_; p++) {
             snprintf(constr_name, sizeof(constr_name), "%s_elem_null_%u_%u", id.c_str(), p, t);
             constr_map.insert(named_constr(constr_name, elems_[p][t] == net_ctx.null_pkt()));
         }
@@ -697,6 +711,8 @@ string SBQueue::get_model_str(model& m, NetContext& net_ctx, unsigned int t) {
     stringstream ss;
     ss << get_id() << ": ";
     append_pkt_slots(ss, m, net_ctx, enqs_, (int) max_enq() - 1, t);
+    ss << "|";
+    append_pkt_slots(ss, m, net_ctx, elems_, (int) size_ - 1, t);
     ss << "->";
     ss << " (" << m.eval(enq_cnt(t)).get_numeral_int() << ", "
        << m.eval(deq_cnt(t)).get_numeral_int() << ") ";
@@ -747,4 +763,14 @@ expr& SBQueue::sender_paused(unsigned int t) {
 
 const expr& SBQueue::sender_paused(unsigned int t) const {
     return sender_paused_[t];
+}
+
+expr SBQueue::elem_pkt(unsigned int t, NetContext& net_ctx) const {
+    if (t == 0 || max_enq_ == 0) return net_ctx.null_pkt();
+    return enqs_[0][t - 1];
+}
+
+expr ImmSBQueue::elem_pkt(unsigned int t, NetContext& net_ctx) const {
+    if (max_enq_ == 0) return net_ctx.null_pkt();
+    return enqs_[0][t];
 }

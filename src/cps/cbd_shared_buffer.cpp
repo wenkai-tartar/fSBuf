@@ -109,8 +109,9 @@ void CBDSharedBufferCP::populate_boundary_ingress_ser_factors() {
 expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t) const {
     SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
     // CBD topology already chooses only ingress-to-ingress edges that carry a flow. At runtime,
-    // the wait edge is active exactly when the corresponding src->dst physical link is PFC-blocked.
-    return src_qm->egress_blocked(edge.src_egress, t, edge.priority);
+    // the paused edge is active exactly when the corresponding src->dst physical link is
+    // sender-paused by the downstream receiver.
+    return src_qm->egress_paused(edge.src_egress, t, edge.priority);
 }
 
 void CBDSharedBufferCP::validate_and_index_ring() {
@@ -180,20 +181,6 @@ void CBDSharedBufferCP::validate_and_index_ring() {
 }
 
 void CBDSharedBufferCP::add_nodes() {
-    QueueInfo in_info{};
-    in_info.size = 1;
-    in_info.max_enq = 1;
-    in_info.max_deq = 1;
-    in_info.meta = 0;
-    in_info.type = queue_t::SB_INGRESS;
-
-    QueueInfo out_info{};
-    out_info.size = 1;
-    out_info.max_enq = 1;
-    out_info.max_deq = 1;
-    out_info.meta = 0;
-    out_info.type = queue_t::SB_EGRESS;
-
     for (CBDSharedBufferSwitchConfig& switch_cfg : switch_configs_) {
         if (switch_cfg.switch_info.ingress_queue_cnt == 0 || switch_cfg.switch_info.egress_queue_cnt == 0) {
             throw runtime_error("CBDSharedBufferCP requires non-zero ingress and egress queue counts");
@@ -202,6 +189,26 @@ void CBDSharedBufferCP::add_nodes() {
         if (switch_cfg.route_policy == nullptr) {
             switch_cfg.route_policy = make_unique<ModuloMeta1RoutePolicy>();
         }
+
+        QueueInfo in_info{};
+        in_info.size = 1;
+        in_info.max_enq = 1;
+        in_info.max_deq = 1;
+        in_info.meta = 0;
+        in_info.type = switch_cfg.switch_info.queue_type ==
+                               SharedBufferSwitchInfo::InterfaceQueueType::IMM_SB
+                           ? queue_t::IMM_SB_INGRESS
+                           : queue_t::SB_INGRESS;
+
+        QueueInfo out_info{};
+        out_info.size = 1;
+        out_info.max_enq = 1;
+        out_info.max_deq = 1;
+        out_info.meta = 0;
+        out_info.type = switch_cfg.switch_info.queue_type ==
+                                SharedBufferSwitchInfo::InterfaceQueueType::IMM_SB
+                            ? queue_t::IMM_SB_EGRESS
+                            : queue_t::SB_EGRESS;
 
         SharedBufferSwitchQM* sb_qm = new SharedBufferSwitchQM(
             switch_cfg.switch_id,
@@ -325,7 +332,8 @@ void CBDSharedBufferCP::add_metrics() {
         Queue* queue = get_switch_qm(edge.dst_switch)->get_in_queue(edge.dst_ingress);
         // TODO(wenkaili): This queue-backed metric identity assumes ring validation guarantees a
         // unique incoming CBD edge per ingress. Once CBD supports general topologies, represent
-        // CBD_WAIT_EDGE by edge identity (for example edge_idx) instead of dst ingress queue id.
+        // this paused-edge metric by edge identity (for example edge_idx) instead of dst ingress
+        // queue id.
         vector<expr> active_exprs;
         active_exprs.reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
@@ -428,9 +436,11 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
     for (const CBDRingEdge& edge : ring_edges_) {
         Queue* tx_queue = get_switch_qm(edge.dst_switch)->get_in_queue(edge.dst_ingress);
         expr& tx_pkt = tx_queue->enqs(0)[t];
+        expr& vis_pkt = tx_queue->elem(0)[t];
         ss << "(" << edge.src_switch << ", e" << edge.src_egress << ") -> "
            << "(" << edge.dst_switch << ", q" << edge.dst_ingress << ")"
            << " tx_pkt=" << pkt_debug_str(tx_pkt)
+           << " vis_pkt=" << pkt_debug_str(vis_pkt)
            << " next_hop=" << tx_queue->get_id() << endl;
     }
 

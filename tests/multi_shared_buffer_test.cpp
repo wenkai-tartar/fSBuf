@@ -309,7 +309,7 @@ static bool test_two_switch_chain_no_same_slot_handoff() {
     return res == solver_res_t::UNSAT;
 }
 
-static bool test_two_switch_chain_handoff_at_t1_sat() {
+static bool test_two_switch_chain_handoff_at_t2_sat() {
     const unsigned int total_time = 6;
 
     SharedBufferEnvInfo env_info;
@@ -321,12 +321,12 @@ static bool test_two_switch_chain_handoff_at_t1_sat() {
 
     SharedBufferSwitchQM* s2_qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm("S2"));
     if (s2_qm == nullptr) {
-        throw runtime_error("two_switch_chain_handoff_at_t1_sat failed to resolve S2");
+        throw runtime_error("two_switch_chain_handoff_at_t2_sat failed to resolve S2");
     }
 
     cid_t s2_internal_ingress = s2_qm->get_in_queue(0)->get_id();
     Query query(query_quant_t::EXISTS,
-                time_range_t(1, 1),
+                time_range_t(2, 2),
                 s2_internal_ingress,
                 metric_t::CENQ,
                 Op(Op::Type::GE),
@@ -334,7 +334,7 @@ static bool test_two_switch_chain_handoff_at_t1_sat() {
     cp.set_query(query);
 
     solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_handoff_at_t1_sat] result: " << res << endl;
+    cout << "[two_switch_chain_handoff_at_t2_sat] result: " << res << endl;
     return res == solver_res_t::SAT;
 }
 
@@ -362,7 +362,7 @@ static bool test_two_switch_chain_two_packets_source_by_t1_sat() {
     return res == solver_res_t::SAT;
 }
 
-static bool test_two_switch_chain_no_two_packet_handoff_by_t1() {
+static bool test_two_switch_chain_no_two_packet_handoff_by_t2() {
     const unsigned int total_time = 6;
 
     SharedBufferEnvInfo env_info;
@@ -374,36 +374,7 @@ static bool test_two_switch_chain_no_two_packet_handoff_by_t1() {
 
     SharedBufferSwitchQM* s2_qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm("S2"));
     if (s2_qm == nullptr) {
-        throw runtime_error("two_switch_chain_no_two_packet_handoff_by_t1 failed to resolve S2");
-    }
-
-    cid_t s2_internal_ingress = s2_qm->get_in_queue(0)->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(1, 1),
-                s2_internal_ingress,
-                metric_t::CENQ,
-                Op(Op::Type::GE),
-                2);
-    cp.set_query(query);
-
-    solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_no_two_packet_handoff_by_t1] result: " << res << endl;
-    return res == solver_res_t::UNSAT;
-}
-
-static bool test_two_switch_chain_two_packet_handoff_by_t2_sat() {
-    const unsigned int total_time = 6;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
-    cp.set_base_workload(make_two_switch_chain_t0_t1_two_packet_workload(cp, total_time));
-
-    SharedBufferSwitchQM* s2_qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm("S2"));
-    if (s2_qm == nullptr) {
-        throw runtime_error("two_switch_chain_two_packet_handoff_by_t2_sat failed to resolve S2");
+        throw runtime_error("two_switch_chain_no_two_packet_handoff_by_t2 failed to resolve S2");
     }
 
     cid_t s2_internal_ingress = s2_qm->get_in_queue(0)->get_id();
@@ -416,7 +387,36 @@ static bool test_two_switch_chain_two_packet_handoff_by_t2_sat() {
     cp.set_query(query);
 
     solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_two_packet_handoff_by_t2_sat] result: " << res << endl;
+    cout << "[two_switch_chain_no_two_packet_handoff_by_t2] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_two_switch_chain_two_packet_handoff_by_t3_sat() {
+    const unsigned int total_time = 6;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
+    cp.set_base_workload(make_two_switch_chain_t0_t1_two_packet_workload(cp, total_time));
+
+    SharedBufferSwitchQM* s2_qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm("S2"));
+    if (s2_qm == nullptr) {
+        throw runtime_error("two_switch_chain_two_packet_handoff_by_t3_sat failed to resolve S2");
+    }
+
+    cid_t s2_internal_ingress = s2_qm->get_in_queue(0)->get_id();
+    Query query(query_quant_t::EXISTS,
+                time_range_t(3, 3),
+                s2_internal_ingress,
+                metric_t::CENQ,
+                Op(Op::Type::GE),
+                2);
+    cp.set_query(query);
+
+    solver_res_t res = cp.satisfy_query();
+    cout << "[two_switch_chain_two_packet_handoff_by_t3_sat] result: " << res << endl;
     return res == solver_res_t::SAT;
 }
 
@@ -444,7 +444,7 @@ static bool test_two_switch_chain_end_to_end_delivery_sat() {
     return res == solver_res_t::SAT;
 }
 
-static bool test_two_switch_chain_no_t1_end_to_end_delivery() {
+static bool test_two_switch_chain_no_t3_end_to_end_delivery() {
     const unsigned int total_time = 6;
 
     SharedBufferEnvInfo env_info;
@@ -453,78 +453,6 @@ static bool test_two_switch_chain_no_t1_end_to_end_delivery() {
 
     MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
     cp.set_base_workload(make_two_switch_chain_t0_single_packet_workload(cp, total_time));
-
-    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(1, 1),
-                s2_boundary_egress,
-                metric_t::CENQ,
-                Op(Op::Type::GE),
-                1);
-    cp.set_query(query);
-
-    solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_no_t1_end_to_end_delivery] result: " << res << endl;
-    return res == solver_res_t::UNSAT;
-}
-
-static bool test_two_switch_chain_delivery_at_t2_sat() {
-    const unsigned int total_time = 6;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
-    cp.set_base_workload(make_two_switch_chain_t0_single_packet_workload(cp, total_time));
-
-    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(2, 2),
-                s2_boundary_egress,
-                metric_t::CENQ,
-                Op(Op::Type::GE),
-                1);
-    cp.set_query(query);
-
-    solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_delivery_at_t2_sat] result: " << res << endl;
-    return res == solver_res_t::SAT;
-}
-
-static bool test_two_switch_chain_no_two_packet_delivery_by_t2() {
-    const unsigned int total_time = 6;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
-    cp.set_base_workload(make_two_switch_chain_t0_t1_two_packet_workload(cp, total_time));
-
-    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(2, 2),
-                s2_boundary_egress,
-                metric_t::CENQ,
-                Op(Op::Type::GE),
-                2);
-    cp.set_query(query);
-
-    solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_no_two_packet_delivery_by_t2] result: " << res << endl;
-    return res == solver_res_t::UNSAT;
-}
-
-static bool test_two_switch_chain_two_packet_delivery_by_t3_sat() {
-    const unsigned int total_time = 6;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
-    cp.set_base_workload(make_two_switch_chain_t0_t1_two_packet_workload(cp, total_time));
 
     cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
     Query query(query_quant_t::EXISTS,
@@ -532,15 +460,114 @@ static bool test_two_switch_chain_two_packet_delivery_by_t3_sat() {
                 s2_boundary_egress,
                 metric_t::CENQ,
                 Op(Op::Type::GE),
+                1);
+    cp.set_query(query);
+
+    solver_res_t res = cp.satisfy_query();
+    cout << "[two_switch_chain_no_t3_end_to_end_delivery] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_two_switch_chain_delivery_at_t4_sat() {
+    const unsigned int total_time = 6;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
+    cp.set_base_workload(make_two_switch_chain_t0_single_packet_workload(cp, total_time));
+
+    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
+    Query query(query_quant_t::EXISTS,
+                time_range_t(4, 4),
+                s2_boundary_egress,
+                metric_t::CENQ,
+                Op(Op::Type::GE),
+                1);
+    cp.set_query(query);
+
+    solver_res_t res = cp.satisfy_query();
+    cout << "[two_switch_chain_delivery_at_t4_sat] result: " << res << endl;
+    return res == solver_res_t::SAT;
+}
+
+static bool test_two_switch_chain_no_two_packet_delivery_by_t4() {
+    const unsigned int total_time = 6;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
+    cp.set_base_workload(make_two_switch_chain_t0_t1_two_packet_workload(cp, total_time));
+
+    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
+    Query query(query_quant_t::EXISTS,
+                time_range_t(4, 4),
+                s2_boundary_egress,
+                metric_t::CENQ,
+                Op(Op::Type::GE),
                 2);
     cp.set_query(query);
 
     solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_two_packet_delivery_by_t3_sat] result: " << res << endl;
+    cout << "[two_switch_chain_no_two_packet_delivery_by_t4] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_two_switch_chain_two_packet_delivery_by_t5_sat() {
+    const unsigned int total_time = 6;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info);
+    cp.set_base_workload(make_two_switch_chain_t0_t1_two_packet_workload(cp, total_time));
+
+    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
+    Query query(query_quant_t::EXISTS,
+                time_range_t(5, 5),
+                s2_boundary_egress,
+                metric_t::CENQ,
+                Op(Op::Type::GE),
+                2);
+    cp.set_query(query);
+
+    solver_res_t res = cp.satisfy_query();
+    cout << "[two_switch_chain_two_packet_delivery_by_t5_sat] result: " << res << endl;
     return res == solver_res_t::SAT;
 }
 
-static bool test_two_switch_chain_downstream_bottleneck_delivery_ge_3_sat() {
+static bool test_two_switch_chain_downstream_bottleneck_delivery_ge_2_sat() {
+    const unsigned int total_time = 8;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    TwoSwitchChainConfig cfg;
+    cfg.s2_egress_ser = 2;
+
+    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info, cfg);
+    cp.set_base_workload(make_two_switch_chain_full_rate_workload(cp, total_time));
+
+    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
+    Query query(query_quant_t::EXISTS,
+                time_range_t(total_time - 1, total_time - 1),
+                s2_boundary_egress,
+                metric_t::CENQ,
+                Op(Op::Type::GE),
+                2);
+    cp.set_query(query);
+
+    solver_res_t res = cp.satisfy_query();
+    cout << "[two_switch_chain_downstream_bottleneck_delivery_ge_2_sat] result: " << res << endl;
+    return res == solver_res_t::SAT;
+}
+
+static bool test_two_switch_chain_downstream_bottleneck_no_delivery_ge_3_by_t7() {
     const unsigned int total_time = 8;
 
     SharedBufferEnvInfo env_info;
@@ -563,34 +590,7 @@ static bool test_two_switch_chain_downstream_bottleneck_delivery_ge_3_sat() {
     cp.set_query(query);
 
     solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_downstream_bottleneck_delivery_ge_3_sat] result: " << res << endl;
-    return res == solver_res_t::SAT;
-}
-
-static bool test_two_switch_chain_downstream_bottleneck_no_delivery_ge_4_by_t7() {
-    const unsigned int total_time = 8;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    TwoSwitchChainConfig cfg;
-    cfg.s2_egress_ser = 2;
-
-    MultiSharedBufferCP cp = make_two_switch_chain_cp(total_time, env_info, cfg);
-    cp.set_base_workload(make_two_switch_chain_full_rate_workload(cp, total_time));
-
-    cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(total_time - 1, total_time - 1),
-                s2_boundary_egress,
-                metric_t::CENQ,
-                Op(Op::Type::GE),
-                4);
-    cp.set_query(query);
-
-    solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_chain_downstream_bottleneck_no_delivery_ge_4_by_t7] result: " << res
+    cout << "[two_switch_chain_downstream_bottleneck_no_delivery_ge_3_by_t7] result: " << res
          << endl;
     return res == solver_res_t::UNSAT;
 }
@@ -713,7 +713,7 @@ static bool test_two_switch_chain_burst_pause_then_resume() {
     resumed_cp.set_base_workload(make_two_switch_chain_four_packet_burst_workload(resumed_cp, total_time));
     cid_t resumed_src_qid = resumed_cp.get_in_queues()[0]->get_id();
     Query resumed_query(query_quant_t::FORALL,
-                        time_range_t(4, total_time - 1),
+                        time_range_t(6, total_time - 1),
                         resumed_src_qid,
                         metric_t::SENDER_PAUSED,
                         Op(Op::Type::EQ),
@@ -752,7 +752,7 @@ static bool test_two_switch_two_source_enqueue_at_t0_sat() {
     return res == solver_res_t::SAT;
 }
 
-static bool test_two_switch_two_source_no_two_flow_handoff_by_t1() {
+static bool test_two_switch_two_source_no_two_flow_handoff_by_t2() {
     const unsigned int total_time = 6;
 
     SharedBufferEnvInfo env_info;
@@ -764,36 +764,7 @@ static bool test_two_switch_two_source_no_two_flow_handoff_by_t1() {
 
     SharedBufferSwitchQM* s2_qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm("S2"));
     if (s2_qm == nullptr) {
-        throw runtime_error("two_switch_two_source_no_two_flow_handoff_by_t1 failed to resolve S2");
-    }
-
-    cid_t s2_internal_ingress = s2_qm->get_in_queue(0)->get_id();
-    Query query(query_quant_t::EXISTS,
-                time_range_t(1, 1),
-                s2_internal_ingress,
-                metric_t::CENQ,
-                Op(Op::Type::GE),
-                2);
-    cp.set_query(query);
-
-    solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_two_source_no_two_flow_handoff_by_t1] result: " << res << endl;
-    return res == solver_res_t::UNSAT;
-}
-
-static bool test_two_switch_two_source_two_flow_handoff_by_t2_sat() {
-    const unsigned int total_time = 6;
-
-    SharedBufferEnvInfo env_info;
-    env_info.max_demand_per_t = 1;
-    env_info.boundary_egress_ctrl_default_false = true;
-
-    MultiSharedBufferCP cp = make_two_switch_two_source_chain_cp(total_time, env_info);
-    cp.set_base_workload(make_two_switch_two_source_t0_two_packet_workload(cp, total_time));
-
-    SharedBufferSwitchQM* s2_qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm("S2"));
-    if (s2_qm == nullptr) {
-        throw runtime_error("two_switch_two_source_two_flow_handoff_by_t2_sat failed to resolve S2");
+        throw runtime_error("two_switch_two_source_no_two_flow_handoff_by_t2 failed to resolve S2");
     }
 
     cid_t s2_internal_ingress = s2_qm->get_in_queue(0)->get_id();
@@ -806,11 +777,40 @@ static bool test_two_switch_two_source_two_flow_handoff_by_t2_sat() {
     cp.set_query(query);
 
     solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_two_source_two_flow_handoff_by_t2_sat] result: " << res << endl;
+    cout << "[two_switch_two_source_no_two_flow_handoff_by_t2] result: " << res << endl;
+    return res == solver_res_t::UNSAT;
+}
+
+static bool test_two_switch_two_source_two_flow_handoff_by_t3_sat() {
+    const unsigned int total_time = 6;
+
+    SharedBufferEnvInfo env_info;
+    env_info.max_demand_per_t = 1;
+    env_info.boundary_egress_ctrl_default_false = true;
+
+    MultiSharedBufferCP cp = make_two_switch_two_source_chain_cp(total_time, env_info);
+    cp.set_base_workload(make_two_switch_two_source_t0_two_packet_workload(cp, total_time));
+
+    SharedBufferSwitchQM* s2_qm = dynamic_cast<SharedBufferSwitchQM*>(cp.get_qm("S2"));
+    if (s2_qm == nullptr) {
+        throw runtime_error("two_switch_two_source_two_flow_handoff_by_t3_sat failed to resolve S2");
+    }
+
+    cid_t s2_internal_ingress = s2_qm->get_in_queue(0)->get_id();
+    Query query(query_quant_t::EXISTS,
+                time_range_t(3, 3),
+                s2_internal_ingress,
+                metric_t::CENQ,
+                Op(Op::Type::GE),
+                2);
+    cp.set_query(query);
+
+    solver_res_t res = cp.satisfy_query();
+    cout << "[two_switch_two_source_two_flow_handoff_by_t3_sat] result: " << res << endl;
     return res == solver_res_t::SAT;
 }
 
-static bool test_two_switch_two_source_no_two_flow_delivery_by_t2() {
+static bool test_two_switch_two_source_no_two_flow_delivery_by_t4() {
     const unsigned int total_time = 6;
 
     SharedBufferEnvInfo env_info;
@@ -822,7 +822,7 @@ static bool test_two_switch_two_source_no_two_flow_delivery_by_t2() {
 
     cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
     Query query(query_quant_t::EXISTS,
-                time_range_t(2, 2),
+                time_range_t(4, 4),
                 s2_boundary_egress,
                 metric_t::CENQ,
                 Op(Op::Type::GE),
@@ -830,11 +830,11 @@ static bool test_two_switch_two_source_no_two_flow_delivery_by_t2() {
     cp.set_query(query);
 
     solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_two_source_no_two_flow_delivery_by_t2] result: " << res << endl;
+    cout << "[two_switch_two_source_no_two_flow_delivery_by_t4] result: " << res << endl;
     return res == solver_res_t::UNSAT;
 }
 
-static bool test_two_switch_two_source_two_flow_delivery_by_t3_sat() {
+static bool test_two_switch_two_source_two_flow_delivery_by_t5_sat() {
     const unsigned int total_time = 6;
 
     SharedBufferEnvInfo env_info;
@@ -846,7 +846,7 @@ static bool test_two_switch_two_source_two_flow_delivery_by_t3_sat() {
 
     cid_t s2_boundary_egress = cp.get_out_queue(0)->get_id();
     Query query(query_quant_t::EXISTS,
-                time_range_t(3, 3),
+                time_range_t(5, 5),
                 s2_boundary_egress,
                 metric_t::CENQ,
                 Op(Op::Type::GE),
@@ -854,7 +854,7 @@ static bool test_two_switch_two_source_two_flow_delivery_by_t3_sat() {
     cp.set_query(query);
 
     solver_res_t res = cp.satisfy_query();
-    cout << "[two_switch_two_source_two_flow_delivery_by_t3_sat] result: " << res << endl;
+    cout << "[two_switch_two_source_two_flow_delivery_by_t5_sat] result: " << res << endl;
     return res == solver_res_t::SAT;
 }
 
@@ -865,38 +865,38 @@ void MultiSharedBufferTest::add_to_runner(TestRunner* runner) {
                           test_two_switch_chain_source_enqueue_at_t0_sat);
     runner->add_test_case("two_switch_chain_no_same_slot_handoff",
                           test_two_switch_chain_no_same_slot_handoff);
-    runner->add_test_case("two_switch_chain_handoff_at_t1_sat",
-                          test_two_switch_chain_handoff_at_t1_sat);
+    runner->add_test_case("two_switch_chain_handoff_at_t2_sat",
+                          test_two_switch_chain_handoff_at_t2_sat);
     runner->add_test_case("two_switch_chain_two_packets_source_by_t1_sat",
                           test_two_switch_chain_two_packets_source_by_t1_sat);
-    runner->add_test_case("two_switch_chain_no_two_packet_handoff_by_t1",
-                          test_two_switch_chain_no_two_packet_handoff_by_t1);
-    runner->add_test_case("two_switch_chain_two_packet_handoff_by_t2_sat",
-                          test_two_switch_chain_two_packet_handoff_by_t2_sat);
+    runner->add_test_case("two_switch_chain_no_two_packet_handoff_by_t2",
+                          test_two_switch_chain_no_two_packet_handoff_by_t2);
+    runner->add_test_case("two_switch_chain_two_packet_handoff_by_t3_sat",
+                          test_two_switch_chain_two_packet_handoff_by_t3_sat);
     runner->add_test_case("two_switch_two_source_enqueue_at_t0_sat",
                           test_two_switch_two_source_enqueue_at_t0_sat);
-    runner->add_test_case("two_switch_two_source_no_two_flow_handoff_by_t1",
-                          test_two_switch_two_source_no_two_flow_handoff_by_t1);
-    runner->add_test_case("two_switch_two_source_two_flow_handoff_by_t2_sat",
-                          test_two_switch_two_source_two_flow_handoff_by_t2_sat);
-    runner->add_test_case("two_switch_two_source_no_two_flow_delivery_by_t2",
-                          test_two_switch_two_source_no_two_flow_delivery_by_t2);
-    runner->add_test_case("two_switch_two_source_two_flow_delivery_by_t3_sat",
-                          test_two_switch_two_source_two_flow_delivery_by_t3_sat);
+    runner->add_test_case("two_switch_two_source_no_two_flow_handoff_by_t2",
+                          test_two_switch_two_source_no_two_flow_handoff_by_t2);
+    runner->add_test_case("two_switch_two_source_two_flow_handoff_by_t3_sat",
+                          test_two_switch_two_source_two_flow_handoff_by_t3_sat);
+    runner->add_test_case("two_switch_two_source_no_two_flow_delivery_by_t4",
+                          test_two_switch_two_source_no_two_flow_delivery_by_t4);
+    runner->add_test_case("two_switch_two_source_two_flow_delivery_by_t5_sat",
+                          test_two_switch_two_source_two_flow_delivery_by_t5_sat);
     runner->add_test_case("two_switch_chain_internal_handoff_sat",
                           test_two_switch_chain_internal_handoff_sat);
-    runner->add_test_case("two_switch_chain_no_t1_end_to_end_delivery",
-                          test_two_switch_chain_no_t1_end_to_end_delivery);
-    runner->add_test_case("two_switch_chain_delivery_at_t2_sat",
-                          test_two_switch_chain_delivery_at_t2_sat);
-    runner->add_test_case("two_switch_chain_no_two_packet_delivery_by_t2",
-                          test_two_switch_chain_no_two_packet_delivery_by_t2);
-    runner->add_test_case("two_switch_chain_two_packet_delivery_by_t3_sat",
-                          test_two_switch_chain_two_packet_delivery_by_t3_sat);
-    runner->add_test_case("two_switch_chain_downstream_bottleneck_delivery_ge_3_sat",
-                          test_two_switch_chain_downstream_bottleneck_delivery_ge_3_sat);
-    runner->add_test_case("two_switch_chain_downstream_bottleneck_no_delivery_ge_4_by_t7",
-                          test_two_switch_chain_downstream_bottleneck_no_delivery_ge_4_by_t7);
+    runner->add_test_case("two_switch_chain_no_t3_end_to_end_delivery",
+                          test_two_switch_chain_no_t3_end_to_end_delivery);
+    runner->add_test_case("two_switch_chain_delivery_at_t4_sat",
+                          test_two_switch_chain_delivery_at_t4_sat);
+    runner->add_test_case("two_switch_chain_no_two_packet_delivery_by_t4",
+                          test_two_switch_chain_no_two_packet_delivery_by_t4);
+    runner->add_test_case("two_switch_chain_two_packet_delivery_by_t5_sat",
+                          test_two_switch_chain_two_packet_delivery_by_t5_sat);
+    runner->add_test_case("two_switch_chain_downstream_bottleneck_delivery_ge_2_sat",
+                          test_two_switch_chain_downstream_bottleneck_delivery_ge_2_sat);
+    runner->add_test_case("two_switch_chain_downstream_bottleneck_no_delivery_ge_3_by_t7",
+                          test_two_switch_chain_downstream_bottleneck_no_delivery_ge_3_by_t7);
     runner->add_test_case("two_switch_chain_backpressure_limits_source_enqueues",
                           test_two_switch_chain_backpressure_limits_source_enqueues);
     runner->add_test_case("two_switch_chain_backpressure_eventually_pauses_source",

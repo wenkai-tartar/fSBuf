@@ -47,7 +47,7 @@ void TableRoutePolicy::add_constrs(cid_t qm_id,
     char constr_name[160];
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         for (unsigned int t = 0; t < total_time; t++) {
-            expr pkt = in_queues[q]->enqs(0)[t];
+            expr pkt = in_queues[q]->elem(0)[t];
             expr has_pkt = net_ctx.pkt2val(pkt);
             expr meta1 = net_ctx.pkt2meta1(pkt);
 

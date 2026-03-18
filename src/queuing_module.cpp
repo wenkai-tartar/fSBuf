@@ -58,6 +58,26 @@ out_queue_info(out_queue_info) {
                                 net_ctx);
                 break;
             }
+            case queue_t::IMM_SB_INGRESS: {
+                q = new ImmSBQueue(base_in_id,
+                                   to_string(qid),
+                                   qinfo.size,
+                                   qinfo.max_enq,
+                                   qinfo.max_deq,
+                                   total_time,
+                                   net_ctx);
+                break;
+            }
+            case queue_t::IMM_SB_EGRESS: {
+                q = new ImmSBQueue(base_in_id,
+                                   to_string(qid),
+                                   qinfo.size,
+                                   qinfo.max_enq,
+                                   qinfo.max_deq,
+                                   total_time,
+                                   net_ctx);
+                break;
+            }
             default: {
                 q = new Queue(base_in_id,
                               to_string(qid),

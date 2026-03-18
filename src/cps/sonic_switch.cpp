@@ -35,14 +35,18 @@ void SONiCSwitch::add_nodes() {
     in_info.max_enq = 1;
     in_info.max_deq = 1;
     in_info.meta = 0;
-    in_info.type = queue_t::SB_INGRESS;
+    in_info.type = switch_info_.queue_type == SharedBufferSwitchInfo::InterfaceQueueType::IMM_SB
+                       ? queue_t::IMM_SB_INGRESS
+                       : queue_t::SB_INGRESS;
 
     QueueInfo out_info{};
     out_info.size = 1;
     out_info.max_enq = 1;
     out_info.max_deq = 1;
     out_info.meta = 0;
-    out_info.type = queue_t::SB_EGRESS;
+    out_info.type = switch_info_.queue_type == SharedBufferSwitchInfo::InterfaceQueueType::IMM_SB
+                        ? queue_t::IMM_SB_EGRESS
+                        : queue_t::SB_EGRESS;
 
     cid_t m_id = "SB_CORE";
     SharedBufferSwitchQM* sb_qm = new SharedBufferSwitchQM(

@@ -19,6 +19,11 @@ struct SharedBufferSwitchInfo {
         ENQ_FIRST = 1,
     };
 
+    enum class InterfaceQueueType {
+        SB = 0,
+        IMM_SB = 1,
+    };
+
     unsigned int ingress_queue_cnt = 1;
     unsigned int egress_queue_cnt = 1;
     unsigned int buffer_slot_cnt = MAX_QUEUE_SIZE;
@@ -28,6 +33,7 @@ struct SharedBufferSwitchInfo {
     vector<unsigned int> ingress_ser_factor;
     vector<unsigned int> egress_ser_factor;
     TimingMode timing_mode = TimingMode::DEQ_FIRST;
+    InterfaceQueueType queue_type = InterfaceQueueType::SB;
 };
 
 class SharedBufferSwitchQM : public QueuingModule {
@@ -59,6 +65,7 @@ public:
                                        unsigned int e,
                                        unsigned int t,
                                        unsigned int priority = 0) const;
+    const expr& egress_paused(unsigned int e, unsigned int t, unsigned int priority = 0) const;
     const expr& egress_blocked(unsigned int e, unsigned int t, unsigned int priority = 0) const;
     const expr& slot_pkt(unsigned int b, unsigned int t, unsigned int k) const;
     string debug_model_str(model& m, NetContext& net_ctx, unsigned int t) const;

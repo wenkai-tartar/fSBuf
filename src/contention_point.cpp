@@ -124,6 +124,26 @@ void ContentionPoint::setup_edges() {
                                             net_ctx);
                         break;
                     }
+                    case queue_t::IMM_SB_INGRESS: {
+                        queue = new ImmSBQueue(base_out_id,
+                                               to_string(q),
+                                               qinfo.size,
+                                               qinfo.max_enq,
+                                               qinfo.max_deq,
+                                               total_time,
+                                               net_ctx);
+                        break;
+                    }
+                    case queue_t::IMM_SB_EGRESS: {
+                        queue = new ImmSBQueue(base_out_id,
+                                               to_string(q),
+                                               qinfo.size,
+                                               qinfo.max_enq,
+                                               qinfo.max_deq,
+                                               total_time,
+                                               net_ctx);
+                        break;
+                    }
                     default: {
                         queue = new Queue(base_out_id,
                                           to_string(q),

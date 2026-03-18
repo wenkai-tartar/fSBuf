@@ -264,6 +264,7 @@ make_free_dst_unbounded_injection_scenario(const string& name, ScenarioExpectati
     scenario.total_time = 8;
     scenario.env_info = make_ring_env_info();
     scenario.switch_params = {};
+    scenario.query_t1 = 5;
     for (RingFlowSpec& flow : scenario.flows) {
         flow.demand_lower_bounds = {{scenario.total_time - 1, 0}};
         flow.demand_upper_bounds = {{scenario.total_time - 1, (int) scenario.total_time}};

@@ -124,6 +124,14 @@ expr SharedBufferSwitchQM::cbd_ingress_pending_to_egress(unsigned int q,
     return pending;
 }
 
+const expr& SharedBufferSwitchQM::egress_paused(unsigned int e,
+                                                unsigned int t,
+                                                unsigned int priority) const {
+    validate_priority(priority);
+    const SBQueue* outq = egress_sb_queue(e);
+    return outq->sender_paused(t);
+}
+
 const expr&
 SharedBufferSwitchQM::egress_blocked(unsigned int e, unsigned int t, unsigned int priority) const {
     validate_priority(priority);
@@ -214,6 +222,7 @@ string SharedBufferSwitchQM::debug_model_str(model& m, NetContext& net_ctx, unsi
     for (unsigned int q = 0; q < in_cnt; q++) {
         const SBQueue* inq = ingress_sb_queue(q);
         ss << " q" << q << "(paused=" << (eval_bool(ingress_paused_[q][t]) ? 1 : 0)
+           << ", vis=" << pkt_str(inq->elem(0)[t])
            << ", txP=" << (eval_bool(inq->pause_tx(t)) ? 1 : 0)
            << ", txR=" << (eval_bool(inq->resume_tx(t)) ? 1 : 0)
            << ", rxP=" << (eval_bool(inq->pause_rx(t)) ? 1 : 0)
@@ -674,7 +683,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
                     continue;
                 }
 
-                expr pkt = inq->enqs(0)[t];
+                expr pkt = inq->elem(0)[t];
                 expr has_enq = net_ctx.pkt2val(pkt);
                 expr dst_eg = route_policy_->routed_egress(id, pkt, eg_cnt, net_ctx);
                 expr has_ing_credit = ingress_pool_total_occ_[t][k] < (int) ingress_pool_cap_cnt;
@@ -1503,7 +1512,7 @@ void SharedBufferSwitchQM::add_scaffold_constrs(NetContext& net_ctx,
 
                 for (unsigned int q = 0; q < in_cnt; q++) {
                     Queue* inq = in_queues[q];
-                    expr pkt = inq->enqs(0)[t];
+                    expr pkt = inq->elem(0)[t];
                     expr dst_eg = route_policy_->routed_egress(id, pkt, eg_cnt, net_ctx);
 
                     snprintf(constr_name,
