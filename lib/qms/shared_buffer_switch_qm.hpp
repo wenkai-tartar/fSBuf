@@ -114,8 +114,8 @@ private:
     vector<vector<vector<expr>>> alloc_hdr_;         // [q][t][k] bool
     vector<vector<vector<expr>>> alloc_eg_lossless_; // [e][t][k] bool
 
-    vector<vector<vector<vector<expr>>>> write_slot_; // [q][b][t][k] bool
-    vector<vector<vector<expr>>> read_slot_;          // [b][t][k] bool
+    vector<vector<vector<expr>>> write_slot_; // [b][t][k] bool
+    vector<vector<vector<expr>>> read_slot_;  // [b][t][k] bool
 
     vector<vector<expr>> min_stamp_e_; // [e][t] int
     vector<vector<expr>> has_pkt_e_;   // [e][t] bool
