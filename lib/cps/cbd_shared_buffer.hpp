@@ -5,7 +5,7 @@
 #include <tuple>
 
 #include "cenq.hpp"
-#include "cbd_wait_edge.hpp"
+#include "cbd_blocked_edge.hpp"
 #include "cdemand.hpp"
 #include "demand.hpp"
 #include "dst.hpp"
@@ -81,7 +81,7 @@ private:
 
     std::vector<CEnq*> cenq_;
     std::vector<CEnq*> out_cenq_;
-    std::vector<CBDWaitEdge*> cbd_wait_edge_;
+    std::vector<CBDBlockedEdge*> cbd_blocked_edge_;
     std::vector<Demand*> demand_;
     std::vector<CDemand*> cdemand_;
     std::vector<Dst*> dst_;

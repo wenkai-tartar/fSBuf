@@ -24,7 +24,7 @@ const map<metric_t, metric_properties> Metric::properties = {
     {metric_t::DEMAND, {true, false, true}},
     {metric_t::CDEMAND, {true, true, true}},
     {metric_t::SENDER_PAUSED, {true, false, false}},
-    {metric_t::CBD_WAIT_EDGE, {true, false, true}}};
+    {metric_t::CBD_BLOCKED_EDGE, {true, false, true}}};
 
 Metric::Metric(metric_t m, Queue* queue, unsigned int total_time, NetContext& net_ctx):
 m_type(m),
@@ -71,7 +71,7 @@ ostream& operator<<(ostream& os, const metric_t& metric) {
         case (metric_t::DEMAND): os << "demand"; break;
         case (metric_t::CDEMAND): os << "cdemand"; break;
         case (metric_t::SENDER_PAUSED): os << "sender_paused"; break;
-        case (metric_t::CBD_WAIT_EDGE): os << "cbd_wait_edge"; break;
+        case (metric_t::CBD_BLOCKED_EDGE): os << "cbd_blocked_edge"; break;
     }
     return os;
 }

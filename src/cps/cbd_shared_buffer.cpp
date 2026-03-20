@@ -340,10 +340,11 @@ void CBDSharedBufferCP::add_metrics() {
             active_exprs.push_back(ring_edge_active(edge, t));
         }
 
-        CBDWaitEdge* wait_edge = new CBDWaitEdge(queue, total_time, active_exprs, net_ctx);
-        cbd_wait_edge_.push_back(wait_edge);
-        metrics[metric_t::CBD_WAIT_EDGE][queue->get_id()] = wait_edge;
-        queue->add_metric(metric_t::CBD_WAIT_EDGE, wait_edge);
+        CBDBlockedEdge* blocked_edge =
+            new CBDBlockedEdge(queue, total_time, active_exprs, net_ctx);
+        cbd_blocked_edge_.push_back(blocked_edge);
+        metrics[metric_t::CBD_BLOCKED_EDGE][queue->get_id()] = blocked_edge;
+        queue->add_metric(metric_t::CBD_BLOCKED_EDGE, blocked_edge);
     }
 }
 
@@ -429,7 +430,7 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
         const CBDRingEdge& edge = ring_edges_[edge_idx];
         ss << "(" << edge.src_switch << ", q" << edge.src_ingress << ", e" << edge.src_egress
            << ") -> (" << edge.dst_switch << ", q" << edge.dst_ingress << ", p" << edge.priority
-           << "): " << m.eval(cbd_wait_edge_[edge_idx]->val(t).second).get_numeral_int() << endl;
+           << "): " << m.eval(cbd_blocked_edge_[edge_idx]->val(t).second).get_numeral_int() << endl;
     }
 
     ss << "ring forwarding:" << endl;

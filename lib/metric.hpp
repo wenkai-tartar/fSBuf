@@ -31,7 +31,7 @@ enum class metric_t {
     DEMAND,
     CDEMAND,
     SENDER_PAUSED,
-    CBD_WAIT_EDGE
+    CBD_BLOCKED_EDGE
 };
 
 enum class metric_granularity_t { PACKET = 0, TIMESTEP };
