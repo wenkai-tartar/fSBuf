@@ -80,28 +80,28 @@ static CBDSharedBufferCP make_three_switch_ring_cp(unsigned int total_time,
     vector<CBDSharedBufferSwitchConfig> switch_configs;
     switch_configs.reserve(3);
 
+    CBDSharedBufferSwitchConfig s0_cfg;
+    s0_cfg.switch_id = "S0";
+    s0_cfg.switch_info = switch_info;
+    s0_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{1, 0, 0});
+    switch_configs.push_back(std::move(s0_cfg));
+
     CBDSharedBufferSwitchConfig s1_cfg;
     s1_cfg.switch_id = "S1";
     s1_cfg.switch_info = switch_info;
-    s1_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{1, 0, 0});
+    s1_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0, 1, 0});
     switch_configs.push_back(std::move(s1_cfg));
 
     CBDSharedBufferSwitchConfig s2_cfg;
     s2_cfg.switch_id = "S2";
     s2_cfg.switch_info = switch_info;
-    s2_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0, 1, 0});
+    s2_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0, 0, 1});
     switch_configs.push_back(std::move(s2_cfg));
 
-    CBDSharedBufferSwitchConfig s3_cfg;
-    s3_cfg.switch_id = "S3";
-    s3_cfg.switch_info = switch_info;
-    s3_cfg.route_policy = make_unique<TableRoutePolicy>(vector<unsigned int>{0, 0, 1});
-    switch_configs.push_back(std::move(s3_cfg));
-
     vector<CBDRingEdge> ring_edges = {
+        {"S0", 0, 0, "S1", 0, 0},
         {"S1", 0, 0, "S2", 0, 0},
-        {"S2", 0, 0, "S3", 0, 0},
-        {"S3", 0, 0, "S1", 0, 0},
+        {"S2", 0, 0, "S0", 0, 0},
     };
 
     return CBDSharedBufferCP(total_time, env_info, std::move(switch_configs), ring_edges);
@@ -168,7 +168,7 @@ static Query make_deadlock_query(CBDSharedBufferCP& cp, const ThreeSwitchRingSce
     return Query(query_quant_t::FORALL,
                  time_range_t(scenario.query_t1, scenario.query_t2),
                  ring_edge_qids,
-                 metric_t::CBD_WAIT_EDGE,
+                 metric_t::CBD_BLOCKED_EDGE,
                  Op(Op::Type::GE),
                  ring_edge_qids.size());
 }
