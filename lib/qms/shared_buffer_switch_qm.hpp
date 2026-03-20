@@ -118,7 +118,9 @@ private:
     vector<vector<vector<expr>>> read_slot_;  // [b][t][k] bool
 
     vector<vector<expr>> min_stamp_e_; // [e][t] int
-    vector<vector<expr>> has_pkt_e_;   // [e][t] bool
+    // TODO(shared-buffer-switch): has_pkt_e_ is derivable from dequeue candidates / min_stamp_e_.
+    // Keep it for now and revisit whether removing it improves model clarity or solver behavior.
+    vector<vector<expr>> has_pkt_e_; // [e][t] bool
     vector<vector<expr>> egress_blocked_; // [e][t] bool, egress has pending pkt but is paused
 };
 
