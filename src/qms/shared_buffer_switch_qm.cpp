@@ -73,6 +73,10 @@ unsigned int SharedBufferSwitchQM::egress_serialization_factor(unsigned int e) c
     return f;
 }
 
+unsigned int SharedBufferSwitchQM::buffer_slot_cnt() const {
+    return sb_info_.buffer_slot_cnt;
+}
+
 void SharedBufferSwitchQM::validate_priority(unsigned int priority) const {
     if (priority != 0) {
         throw runtime_error("SharedBufferSwitchQM currently only supports priority=0");
@@ -125,10 +129,72 @@ expr SharedBufferSwitchQM::cbd_ingress_pending_to_egress(unsigned int q,
 }
 
 const expr&
+SharedBufferSwitchQM::ingress_pool_occ(unsigned int q, unsigned int t, unsigned int k) const {
+    return ingress_pool_occ_[q][t][k];
+}
+
+const expr& SharedBufferSwitchQM::ingress_pool_total_occ(unsigned int t, unsigned int k) const {
+    return ingress_pool_total_occ_[t][k];
+}
+
+const expr&
+SharedBufferSwitchQM::headroom_pool_occ(unsigned int q, unsigned int t, unsigned int k) const {
+    return headroom_pool_occ_[q][t][k];
+}
+
+const expr& SharedBufferSwitchQM::headroom_pool_total_occ(unsigned int t, unsigned int k) const {
+    return headroom_pool_total_occ_[t][k];
+}
+
+const expr& SharedBufferSwitchQM::egress_lossless_pool_occ(unsigned int e,
+                                                           unsigned int t,
+                                                           unsigned int k) const {
+    return egress_lossless_pool_occ_[e][t][k];
+}
+
+const expr&
+SharedBufferSwitchQM::egress_lossless_pool_total_occ(unsigned int t, unsigned int k) const {
+    return egress_lossless_pool_total_occ_[t][k];
+}
+
+const expr& SharedBufferSwitchQM::admit_in(unsigned int q, unsigned int t, unsigned int k) const {
+    return admit_in_[q][t][k];
+}
+
+const expr& SharedBufferSwitchQM::admit(unsigned int q, unsigned int t, unsigned int k) const {
+    return admit_[q][t][k];
+}
+
+const expr& SharedBufferSwitchQM::alloc_in(unsigned int q, unsigned int t, unsigned int k) const {
+    return alloc_in_[q][t][k];
+}
+
+const expr& SharedBufferSwitchQM::alloc_hdr(unsigned int q, unsigned int t, unsigned int k) const {
+    return alloc_hdr_[q][t][k];
+}
+
+const expr& SharedBufferSwitchQM::admit_e(unsigned int e, unsigned int t, unsigned int k) const {
+    return admit_e_[e][t][k];
+}
+
+const expr&
+SharedBufferSwitchQM::alloc_eg_lossless(unsigned int e, unsigned int t, unsigned int k) const {
+    return alloc_eg_lossless_[e][t][k];
+}
+
+const expr&
 SharedBufferSwitchQM::egress_paused(unsigned int e, unsigned int t, unsigned int priority) const {
     validate_priority(priority);
     const SBQueue* outq = egress_sb_queue(e);
     return outq->sender_paused(t);
+}
+
+const expr& SharedBufferSwitchQM::egress_has_pkt(unsigned int e, unsigned int t) const {
+    return has_pkt_e_[e][t];
+}
+
+const expr& SharedBufferSwitchQM::egress_min_stamp(unsigned int e, unsigned int t) const {
+    return min_stamp_e_[e][t];
 }
 
 const expr&
@@ -139,6 +205,33 @@ SharedBufferSwitchQM::egress_blocked(unsigned int e, unsigned int t, unsigned in
 
 const expr& SharedBufferSwitchQM::slot_pkt(unsigned int b, unsigned int t, unsigned int k) const {
     return buf_pkt_[b][t][k];
+}
+
+const expr& SharedBufferSwitchQM::slot_ingress(unsigned int b,
+                                               unsigned int t,
+                                               unsigned int k) const {
+    return buf_in_[b][t][k];
+}
+
+const expr& SharedBufferSwitchQM::slot_egress(unsigned int b,
+                                              unsigned int t,
+                                              unsigned int k) const {
+    return buf_e_[b][t][k];
+}
+
+const expr& SharedBufferSwitchQM::slot_stamp(unsigned int b,
+                                             unsigned int t,
+                                             unsigned int k) const {
+    return buf_stamp_[b][t][k];
+}
+
+const expr&
+SharedBufferSwitchQM::write_slot(unsigned int b, unsigned int t, unsigned int k) const {
+    return write_slot_[b][t][k];
+}
+
+const expr& SharedBufferSwitchQM::read_slot(unsigned int b, unsigned int t, unsigned int k) const {
+    return read_slot_[b][t][k];
 }
 
 SBQueue* SharedBufferSwitchQM::ingress_sb_queue(unsigned int q) {

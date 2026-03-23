@@ -520,7 +520,6 @@ bool ContentionPoint::generate_base_example(IndexedExample* base_eg,
 
     for (unsigned int q = 0; q < in_queues.size(); q++) {
         expr empty_queue = ite(per_queue_enq_sum[q] == 0, net_ctx.int_val(1), net_ctx.int_val(0));
-
         empty_queues_expr_vec.push_back(empty_queue);
     }
 
@@ -1884,7 +1883,8 @@ expr ContentionPoint::get_expr(Query& query) {
     metric_t m = query.get_metric();
 
     if (metrics.find(m) == metrics.end()) {
-        cout << "ContentionPoint::get_expr(Query): Invalid Query: missing metric kind " << m << endl;
+        cout << "ContentionPoint::get_expr(Query): Invalid Query: missing metric kind " << m
+             << endl;
         query_expr = net_ctx.bool_val(false);
         return query_expr;
     }

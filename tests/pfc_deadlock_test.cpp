@@ -49,6 +49,10 @@ struct ThreeSwitchRingScenario {
 struct ScenarioResult {
     solver_res_t workload_res = solver_res_t::UNKNOWN;
     solver_res_t deadlock_res = solver_res_t::UNKNOWN;
+    SBIndexedExample witness;
+    string model_str;
+    qset_t target_queues;
+    qset_t zero_queues;
 };
 
 static SharedBufferEnvInfo make_ring_env_info() {
@@ -189,7 +193,12 @@ static ScenarioResult run_three_switch_ring_scenario(const ThreeSwitchRingScenar
     cp.set_base_workload(wl);
     Query query = make_deadlock_query(cp, scenario);
     cp.set_query(query);
-    result.deadlock_res = cp.satisfy_query();
+    result.deadlock_res = cp.optimize_query_witness_min_simultaneous_enq_with_model(
+        &result.witness,
+        result.model_str,
+        cp.in_queue_cnt(),
+        &result.target_queues,
+        &result.zero_queues);
     return result;
 }
 
@@ -261,9 +270,13 @@ make_free_dst_deadlock_scenario(const string& name, ScenarioExpectation expected
 make_free_dst_unbounded_injection_scenario(const string& name, ScenarioExpectation expected) {
     ThreeSwitchRingScenario scenario;
     scenario.name = name;
-    scenario.total_time = 8;
+    scenario.total_time = 10;
     scenario.env_info = make_ring_env_info();
     scenario.switch_params = {};
+    scenario.switch_params.buffer_slot_cnt = 4;
+    scenario.switch_params.ingress_pool_size = 4;
+    scenario.switch_params.headroom_pool_size = 1;
+    scenario.switch_params.egress_lossless_pool_size = 4;
     scenario.query_t1 = 5;
     for (RingFlowSpec& flow : scenario.flows) {
         flow.demand_lower_bounds = {{scenario.total_time - 1, 0}};
@@ -304,6 +317,10 @@ static bool test_pfc_deadlock_three_switch_ring_framework() {
             cout << " deadlock=" << result.deadlock_res;
         }
         cout << endl;
+        if (result.deadlock_res == solver_res_t::SAT) {
+            cout << "witness:" << endl;
+            cout << result.witness << endl;
+        }
         ok = matches_expectation(scenario, result) && ok;
     }
     return ok;

@@ -56,6 +56,7 @@ public:
     unsigned int egress_lossless_pool_cap() const;
     unsigned int ingress_serialization_factor(unsigned int q) const;
     unsigned int egress_serialization_factor(unsigned int e) const;
+    unsigned int buffer_slot_cnt() const;
 
     const expr& ingress_paused(unsigned int q, unsigned int t) const;
     const expr& cbd_ingress_paused(unsigned int q, unsigned int t, unsigned int priority = 0) const;
@@ -65,9 +66,28 @@ public:
                                        unsigned int e,
                                        unsigned int t,
                                        unsigned int priority = 0) const;
+    const expr& ingress_pool_occ(unsigned int q, unsigned int t, unsigned int k) const;
+    const expr& ingress_pool_total_occ(unsigned int t, unsigned int k) const;
+    const expr& headroom_pool_occ(unsigned int q, unsigned int t, unsigned int k) const;
+    const expr& headroom_pool_total_occ(unsigned int t, unsigned int k) const;
+    const expr& egress_lossless_pool_occ(unsigned int e, unsigned int t, unsigned int k) const;
+    const expr& egress_lossless_pool_total_occ(unsigned int t, unsigned int k) const;
+    const expr& admit_in(unsigned int q, unsigned int t, unsigned int k) const;
+    const expr& admit(unsigned int q, unsigned int t, unsigned int k) const;
+    const expr& alloc_in(unsigned int q, unsigned int t, unsigned int k) const;
+    const expr& alloc_hdr(unsigned int q, unsigned int t, unsigned int k) const;
+    const expr& admit_e(unsigned int e, unsigned int t, unsigned int k) const;
+    const expr& alloc_eg_lossless(unsigned int e, unsigned int t, unsigned int k) const;
     const expr& egress_paused(unsigned int e, unsigned int t, unsigned int priority = 0) const;
+    const expr& egress_has_pkt(unsigned int e, unsigned int t) const;
+    const expr& egress_min_stamp(unsigned int e, unsigned int t) const;
     const expr& egress_blocked(unsigned int e, unsigned int t, unsigned int priority = 0) const;
     const expr& slot_pkt(unsigned int b, unsigned int t, unsigned int k) const;
+    const expr& slot_ingress(unsigned int b, unsigned int t, unsigned int k) const;
+    const expr& slot_egress(unsigned int b, unsigned int t, unsigned int k) const;
+    const expr& slot_stamp(unsigned int b, unsigned int t, unsigned int k) const;
+    const expr& write_slot(unsigned int b, unsigned int t, unsigned int k) const;
+    const expr& read_slot(unsigned int b, unsigned int t, unsigned int k) const;
     string debug_model_str(model& m, NetContext& net_ctx, unsigned int t) const;
 
 private:

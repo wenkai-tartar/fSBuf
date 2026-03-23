@@ -10,6 +10,80 @@
 
 #include <iostream>
 
+namespace {
+void append_packet_snapshot(ostream& os, const PacketSnapshot& pkt) {
+    if (!pkt.valid) {
+        os << "x";
+        return;
+    }
+    os << "[" << pkt.meta1 << ", " << pkt.meta2 << "]";
+}
+
+void append_shared_buffer_switch_states(ostream& os,
+                                        const cid_t& switch_id,
+                                        const vector<SharedBufferSwitchState>& states) {
+    os << switch_id << endl;
+    for (unsigned int t = 0; t < states.size(); t++) {
+        const SharedBufferSwitchState& state = states[t];
+        os << "  T=" << t << endl;
+        os << "    ingress:";
+        for (unsigned int q = 0; q < state.ingress.size(); q++) {
+            const SharedBufferIngressState& ingress = state.ingress[q];
+            os << " q" << q << "(paused=" << ingress.ingress_paused << ", vis=";
+            append_packet_snapshot(os, ingress.queue_ctrl.vis_pkt);
+            os << ", txP=" << ingress.queue_ctrl.pause_tx
+               << ", txR=" << ingress.queue_ctrl.resume_tx
+               << ", rxP=" << ingress.queue_ctrl.pause_rx
+               << ", rxR=" << ingress.queue_ctrl.resume_rx
+               << ", sp=" << ingress.queue_ctrl.sender_paused << ")";
+        }
+        os << endl;
+
+        os << "    egress:";
+        for (unsigned int e = 0; e < state.egress.size(); e++) {
+            const SharedBufferEgressState& egress = state.egress[e];
+            os << " e" << e << "(sp=" << egress.sender_paused << ", can_emit=" << egress.can_emit
+               << ", has_pkt=" << egress.has_pkt << ", blocked=" << egress.blocked
+               << ", min_stamp=" << egress.min_stamp << ")";
+        }
+        os << endl;
+
+        for (unsigned int k = 0; k < state.microstates.size(); k++) {
+            const SharedBufferMicroState& micro = state.microstates[k];
+            os << "    k=" << k << " active_q=" << micro.active_q
+               << " totals(in=" << micro.ingress_pool_total << ", hdr=" << micro.headroom_pool_total
+               << ", eg=" << micro.egress_lossless_pool_total << ")" << endl;
+            os << "      ingress_occ:";
+            for (unsigned int q = 0; q < micro.ingress_pool_occ.size(); q++) {
+                os << " q" << q << "=" << micro.ingress_pool_occ[q];
+            }
+            os << endl;
+            os << "      headroom_occ:";
+            for (unsigned int q = 0; q < micro.headroom_pool_occ.size(); q++) {
+                os << " q" << q << "=" << micro.headroom_pool_occ[q];
+            }
+            os << endl;
+            os << "      egress_occ:";
+            for (unsigned int e = 0; e < micro.egress_lossless_pool_occ.size(); e++) {
+                os << " e" << e << "=" << micro.egress_lossless_pool_occ[e];
+            }
+            os << endl;
+            os << "      slots:";
+            for (unsigned int b = 0; b < micro.slots.size(); b++) {
+                const SharedBufferSlotState& slot = micro.slots[b];
+                os << " b" << b << "=";
+                append_packet_snapshot(os, slot.pkt);
+                os << "(in=" << slot.ingress << ", e=" << slot.egress << ", st=" << slot.stamp;
+                if (slot.read) os << ", R";
+                if (slot.write) os << ", Wq" << slot.write_q;
+                os << ")";
+            }
+            os << endl;
+        }
+    }
+}
+} // namespace
+
 ostream& operator<<(ostream& os, const Example& eg) {
     os << "total time: " << eg.total_time << endl;
     os << eg.query_qid << endl;
@@ -61,6 +135,7 @@ ostream& operator<<(ostream& os, const Example& eg) {
         }
         os << endl;
     }
+
     return os;
 }
 
@@ -415,6 +490,104 @@ ostream& operator<<(ostream& os, const IndexedExample& eg) {
             os << " | ";
         }
         os << endl;
+    }
+
+    return os;
+}
+
+ostream& operator<<(ostream& os, const SBExample& eg) {
+    os << static_cast<const Example&>(eg);
+    if (!eg.shared_buffer_states.empty()) {
+        os << "shared buffer states:" << endl;
+        for (map<cid_t, vector<SharedBufferSwitchState>>::const_iterator it =
+                 eg.shared_buffer_states.begin();
+             it != eg.shared_buffer_states.end();
+             it++) {
+            append_shared_buffer_switch_states(os, it->first, it->second);
+        }
+    }
+    return os;
+}
+
+ostream& operator<<(ostream& os, const SBIndexedExample& eg) {
+    os << "total time: " << eg.total_time << endl;
+    os << "query: " << eg.query_quant << " " << eg.query_lhs;
+    if (!eg.query_metric.empty()) {
+        os << " " << eg.query_metric;
+    }
+    if (!eg.query_op.empty()) {
+        os << " " << eg.query_op << " " << eg.query_thresh;
+    }
+    os << " on " << eg.query_time_range << endl;
+    if (!eg.input_queue_ids.empty() && eg.input_queue_ids.size() == eg.enqs.size()) {
+        os << "input queues:";
+        for (unsigned int i = 0; i < eg.input_queue_ids.size(); i++) {
+            os << " q" << i << "=" << eg.input_queue_ids[i];
+        }
+        os << endl;
+    }
+
+    os << "enqs:" << endl;
+    for (unsigned int i = 0; i < eg.enqs.size(); i++) {
+        os << "q" << i;
+        if (i < eg.input_queue_ids.size()) os << " (" << eg.input_queue_ids[i] << ")";
+        os << ": ";
+        for (unsigned int t = 0; t < eg.enqs[i].size(); t++) {
+            os << eg.enqs[i][t] << " ";
+        }
+        os << endl;
+    }
+
+    os << "deqs:" << endl;
+    for (unsigned int i = 0; i < eg.deqs.size(); i++) {
+        os << "q" << i;
+        if (i < eg.input_queue_ids.size()) os << " (" << eg.input_queue_ids[i] << ")";
+        os << ": ";
+        for (unsigned int t = 0; t < eg.deqs[i].size(); t++) {
+            os << eg.deqs[i][t] << " ";
+        }
+        os << endl;
+    }
+
+    os << "demands:" << endl;
+    for (unsigned int i = 0; i < eg.demands.size(); i++) {
+        os << "q" << i;
+        if (i < eg.input_queue_ids.size()) os << " (" << eg.input_queue_ids[i] << ")";
+        os << ": ";
+        for (unsigned int t = 0; t < eg.demands[i].size(); t++) {
+            os << eg.demands[i][t] << " ";
+        }
+        os << endl;
+    }
+
+    os << "pkts metadata:" << endl;
+    for (unsigned int i = 0; i < eg.enqs_meta1.size(); i++) {
+        os << "q" << i;
+        if (i < eg.input_queue_ids.size()) os << " (" << eg.input_queue_ids[i] << ")";
+        os << ": ";
+        for (unsigned int t = 0; t < eg.enqs_meta1[i].size(); t++) {
+            vector<int> meta1 = eg.enqs_meta1[i][t];
+            vector<int> meta2 = eg.enqs_meta2[i][t];
+            for (unsigned int p = 0; p < meta1.size(); p++) {
+                os << "[" << meta1[p] << ", " << meta2[p] << "] ";
+            }
+            os << "| ";
+        }
+        os << endl;
+    }
+
+    if (!eg.shared_buffer_switch_ids.empty() &&
+        eg.shared_buffer_switch_ids.size() == eg.shared_buffer_states.size()) {
+        os << "shared buffer switches:";
+        for (unsigned int i = 0; i < eg.shared_buffer_switch_ids.size(); i++) {
+            os << " " << eg.shared_buffer_switch_ids[i];
+        }
+        os << endl;
+        os << "shared buffer states:" << endl;
+        for (unsigned int i = 0; i < eg.shared_buffer_switch_ids.size(); i++) {
+            append_shared_buffer_switch_states(
+                os, eg.shared_buffer_switch_ids[i], eg.shared_buffer_states[i]);
+        }
     }
     return os;
 }
