@@ -106,12 +106,19 @@ void CBDSharedBufferCP::populate_boundary_ingress_ser_factors() {
     }
 }
 
-expr CBDSharedBufferCP::ring_edge_active(const CBDRingEdge& edge, unsigned int t) const {
-    SharedBufferSwitchQM* src_qm = get_switch_qm(edge.src_switch);
-    // CBD topology already chooses only ingress-to-ingress edges that carry a flow. At runtime,
-    // the paused edge is active exactly when the corresponding src->dst physical link is
-    // sender-paused by the downstream receiver.
-    return src_qm->egress_paused(edge.src_egress, t, edge.priority);
+expr CBDSharedBufferCP::blocked_edge_active(const CBDRingEdge& incoming_edge,
+                                            unsigned int t) const {
+    const CBDNodeRef node = dst_node(incoming_edge);
+    const CBDRingEdge& outgoing_edge = outgoing_ring_edge(node);
+    SharedBufferSwitchQM* qm = get_switch_qm(node.switch_id);
+    // A CBD blocked edge is a ring-node dependency A->B: packets that arrived through incoming
+    // edge A (buf.in == A.dst) are waiting for outgoing edge B (buf.e == B.src), and B is paused
+    // by the downstream receiver.
+    return qm->cbd_ingress_pending_to_egress(node.ingress,
+                                             outgoing_edge.src_egress,
+                                             t,
+                                             node.priority) &&
+           qm->egress_paused(outgoing_edge.src_egress, t, outgoing_edge.priority);
 }
 
 void CBDSharedBufferCP::validate_and_index_ring() {
@@ -332,12 +339,12 @@ void CBDSharedBufferCP::add_metrics() {
         Queue* queue = get_switch_qm(edge.dst_switch)->get_in_queue(edge.dst_ingress);
         // TODO(wenkaili): This queue-backed metric identity assumes ring validation guarantees a
         // unique incoming CBD edge per ingress. Once CBD supports general topologies, represent
-        // this paused-edge metric by edge identity (for example edge_idx) instead of dst ingress
+        // this blocked-edge metric by edge identity (for example edge_idx) instead of dst ingress
         // queue id.
         vector<expr> active_exprs;
         active_exprs.reserve(total_time);
         for (unsigned int t = 0; t < total_time; t++) {
-            active_exprs.push_back(ring_edge_active(edge, t));
+            active_exprs.push_back(blocked_edge_active(edge, t));
         }
 
         CBDBlockedEdge* blocked_edge =
@@ -425,12 +432,16 @@ string CBDSharedBufferCP::cp_model_str(model& m, NetContext& net_ctx, unsigned i
            << " out->(" << out_edge.dst_switch << ", q" << out_edge.dst_ingress << ")" << endl;
     }
 
-    ss << "ring paused links: active" << endl;
+    ss << "ring blocked edges (incoming -> outgoing): active" << endl;
     for (unsigned int edge_idx = 0; edge_idx < ring_edges_.size(); edge_idx++) {
-        const CBDRingEdge& edge = ring_edges_[edge_idx];
-        ss << "(" << edge.src_switch << ", q" << edge.src_ingress << ", e" << edge.src_egress
-           << ") -> (" << edge.dst_switch << ", q" << edge.dst_ingress << ", p" << edge.priority
-           << "): " << m.eval(cbd_blocked_edge_[edge_idx]->val(t).second).get_numeral_int() << endl;
+        const CBDRingEdge& incoming_edge = ring_edges_[edge_idx];
+        const CBDRingEdge& outgoing_edge = outgoing_ring_edge(dst_node(incoming_edge));
+        ss << "(" << incoming_edge.src_switch << ", e" << incoming_edge.src_egress << ") -> "
+           << "(" << incoming_edge.dst_switch << ", q" << incoming_edge.dst_ingress << ") => "
+           << "(" << outgoing_edge.src_switch << ", e" << outgoing_edge.src_egress << ") -> "
+           << "(" << outgoing_edge.dst_switch << ", q" << outgoing_edge.dst_ingress << ", p"
+           << outgoing_edge.priority << "): "
+           << m.eval(cbd_blocked_edge_[edge_idx]->val(t).second).get_numeral_int() << endl;
     }
 
     ss << "ring forwarding:" << endl;

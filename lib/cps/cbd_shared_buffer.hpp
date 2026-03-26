@@ -91,7 +91,7 @@ private:
     CBDEgressRef src_egress(const CBDRingEdge& edge) const;
     SharedBufferSwitchQM* get_switch_qm(const cid_t& switch_id) const;
     void populate_boundary_ingress_ser_factors();
-    expr ring_edge_active(const CBDRingEdge& edge, unsigned int t) const;
+    expr blocked_edge_active(const CBDRingEdge& incoming_edge, unsigned int t) const;
     void validate_and_index_ring();
     void add_nodes() override;
     void add_edges() override;
